@@ -208,6 +208,19 @@ jobs:
           echo "OPENSSL_DIR=/usr/local/ssl-arm" >> $GITHUB_ENV
           echo "OPENSSL_LIB_DIR=/usr/local/ssl-arm/lib" >> $GITHUB_ENV
           echo "OPENSSL_INCLUDE_DIR=/usr/local/ssl-arm/include" >> $GITHUB_ENV
+      - name: Set ALSA pkg-config path for webOS SDK
+        run: |
+          # Find ALSA pkg-config in webOS SDK sysroot
+          WEBOS_SYSROOT="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot/arm-buildroot-linux-gnueabi/sysroot"
+          ALSA_PC=$(find "$WEBOS_SYSROOT" -name "alsa.pc" 2>/dev/null | head -1)
+          if [ -n "$ALSA_PC" ]; then
+            ALSA_PKG_DIR=$(dirname "$ALSA_PC")
+            echo "PKG_CONFIG_PATH=$ALSA_PKG_DIR" >> $GITHUB_ENV
+            echo "Found ALSA pkg-config at: $ALSA_PKG_DIR"
+          else
+            echo "ALSA pkg-config not found in webOS SDK sysroot"
+            find "$WEBOS_SYSROOT" -name "*.pc" 2>/dev/null | head -20
+          fi
       - uses: actions/download-artifact@v8
         with:
           name: smoke-inputs
