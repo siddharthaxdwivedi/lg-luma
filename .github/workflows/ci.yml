@@ -234,6 +234,19 @@ jobs:
         id: package
         run: |
           export WEBOS_NDK="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot"
+          # Set pkg-config paths for ALSA in webOS SDK sysroot
+          WEBOS_SYSROOT="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot/arm-buildroot-linux-gnueabi/sysroot"
+          ALSA_PC=$(find "$WEBOS_SYSROOT" -name "alsa.pc" 2>/dev/null | head -1)
+          if [ -n "$ALSA_PC" ]; then
+            ALSA_PKG_DIR=$(dirname "$ALSA_PC")
+            export PKG_CONFIG_PATH="$ALSA_PKG_DIR"
+            export PKG_CONFIG_SYSROOT_DIR="$WEBOS_SYSROOT"
+            echo "Found ALSA pkg-config at: $ALSA_PKG_DIR"
+            echo "Set PKG_CONFIG_SYSROOT_DIR to: $WEBOS_SYSROOT"
+          else
+            echo "ALSA pkg-config not found in webOS SDK sysroot"
+            find "$WEBOS_SYSROOT" -name "*.pc" 2>/dev/null | head -20
+          fi
           pnpm build
           node tools/package.mjs
           node tools/repository.mjs
