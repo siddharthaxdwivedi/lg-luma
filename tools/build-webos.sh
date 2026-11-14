@@ -49,7 +49,11 @@ export CXX_armv7_unknown_linux_gnueabi="$CXX"
 # Disable host CPU feature detection (-march=native) for the cross build.
 export GGML_NATIVE=OFF
 export GGML_OPENMP=OFF
-# Use the crate's pre-generated bindings instead of requiring libclang.
-export WHISPER_DONT_GENERATE_BINDINGS=1
+# The crate's bundled bindings are 64-bit glibc; their compile-time size
+# assertions fail for 32-bit ARM, so bindgen must generate ARM bindings.
+unset WHISPER_DONT_GENERATE_BINDINGS
+BINDGEN_TARGET_ARGS="--target=armv7-unknown-linux-gnueabi --sysroot=$SYSROOT -isystem $SYSROOT/usr/include"
+export BINDGEN_EXTRA_CLANG_ARGS_armv7_unknown_linux_gnueabi="$BINDGEN_TARGET_ARGS"
+export BINDGEN_EXTRA_CLANG_ARGS="$BINDGEN_TARGET_ARGS"
 
 exec cargo build --locked --manifest-path "$ROOT/Cargo.toml" --package luma --package luma-tv-helper --target armv7-unknown-linux-gnueabi --features webos,voice-assistant --release
