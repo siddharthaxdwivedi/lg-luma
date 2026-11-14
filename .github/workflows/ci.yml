@@ -308,17 +308,17 @@ jobs:
           if [ -n "$VOSK_LIB" ] && [ -n "$VOSK_INCLUDE" ]; then
             echo "Found Vosk in webOS SDK sysroot"
           else
-            echo "Vosk not found in webOS SDK, downloading pre-built ARM library..."
-            # Download pre-built Vosk ARM library from GitHub releases
+            echo "Vosk not found in webOS SDK, downloading pre-built ARMv7 library..."
+            # Download pre-built Vosk ARMv7 library from GitHub releases
             cd /tmp
             VOSK_VERSION="0.3.45"
-            wget -q "https://github.com/alphacep/vosk-api/releases/download/v${VOSK_VERSION}/vosk-linux-arm-${VOSK_VERSION}.zip"
-            unzip -q "vosk-linux-arm-${VOSK_VERSION}.zip"
+            wget -q "https://github.com/alphacep/vosk-api/releases/download/v${VOSK_VERSION}/vosk-linux-armv7l-${VOSK_VERSION}.zip"
+            unzip -q "vosk-linux-armv7l-${VOSK_VERSION}.zip"
             # Install to sysroot
             mkdir -p "$WEBOS_SYSROOT/usr/lib"
             mkdir -p "$WEBOS_SYSROOT/usr/include"
-            cp "vosk-linux-arm-${VOSK_VERSION}/libvosk.so" "$WEBOS_SYSROOT/usr/lib/"
-            cp "vosk-linux-arm-${VOSK_VERSION}/vosk_api.h" "$WEBOS_SYSROOT/usr/include/"
+            cp "vosk-linux-armv7l-${VOSK_VERSION}/libvosk.so" "$WEBOS_SYSROOT/usr/lib/"
+            cp "vosk-linux-armv7l-${VOSK_VERSION}/vosk_api.h" "$WEBOS_SYSROOT/usr/include/"
             echo "Vosk library downloaded and installed to sysroot"
           fi
           # Verify Vosk is in place
