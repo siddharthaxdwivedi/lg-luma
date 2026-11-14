@@ -259,6 +259,35 @@ jobs:
             ls -la "$WEBOS_SYSROOT/usr/share/pkgconfig/" 2>/dev/null || echo "Not found"
             exit 1
           fi
+      - name: Install ALSA headers into sysroot
+        run: |
+          # Install ALSA development headers into sysroot for cross-compilation
+          WEBOS_SYSROOT=$(find "$GITHUB_WORKSPACE/.build/toolchain" -name "sysroot" -type d 2>/dev/null | head -1)
+          echo "Installing ALSA headers into sysroot: $WEBOS_SYSROOT"
+          # Copy ALSA headers from host to sysroot
+          if [ -d "/usr/include/alsa" ]; then
+            mkdir -p "$WEBOS_SYSROOT/usr/include"
+            cp -r /usr/include/alsa "$WEBOS_SYSROOT/usr/include/"
+            echo "Copied ALSA headers to sysroot"
+          else
+            echo "ALSA headers not found on host, trying to install"
+            sudo apt-get update && sudo apt-get install -y libasound2-dev
+            if [ -d "/usr/include/alsa" ]; then
+              mkdir -p "$WEBOS_SYSROOT/usr/include"
+              cp -r /usr/include/alsa "$WEBOS_SYSROOT/usr/include/"
+              echo "Copied ALSA headers to sysroot after install"
+            else
+              echo "ERROR: ALSA headers still not found"
+              exit 1
+            fi
+          fi
+          # Verify headers are in place
+          if [ -f "$WEBOS_SYSROOT/usr/include/alsa/asoundlib.h" ]; then
+            echo "ALSA headers successfully installed in sysroot"
+          else
+            echo "ERROR: ALSA headers not found in sysroot after copy"
+            exit 1
+          fi
       - name: Cross-build and verify the native IPK and Homebrew feed
         id: package
         run: |
