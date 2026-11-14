@@ -216,7 +216,9 @@ jobs:
           if [ -n "$ALSA_PC" ]; then
             ALSA_PKG_DIR=$(dirname "$ALSA_PC")
             echo "PKG_CONFIG_PATH=$ALSA_PKG_DIR" >> $GITHUB_ENV
+            echo "PKG_CONFIG_SYSROOT_DIR=$WEBOS_SYSROOT" >> $GITHUB_ENV
             echo "Found ALSA pkg-config at: $ALSA_PKG_DIR"
+            echo "Set PKG_CONFIG_SYSROOT_DIR to: $WEBOS_SYSROOT"
           else
             echo "ALSA pkg-config not found in webOS SDK sysroot"
             find "$WEBOS_SYSROOT" -name "*.pc" 2>/dev/null | head -20
