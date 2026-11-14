@@ -36,4 +36,4 @@ export PKG_CONFIG_ALLOW_CROSS=1
 # Only set PKG_CONFIG_SYSROOT_DIR if not already provided by CI (needed for ALSA).
 : "${PKG_CONFIG_SYSROOT_DIR:=/}"
 export PKG_CONFIG_LIBDIR="$ROOT/.build/sdl-webos/pkgconfig"
-exec cargo build --locked --manifest-path "$ROOT/Cargo.toml" --package luma --package luma-tv-helper --target armv7-unknown-linux-gnueabi --features webos --release
+exec cargo build --locked --manifest-path "$ROOT/Cargo.toml" --package luma --package luma-tv-helper --target armv7-unknown-linux-gnueabi --features webos,voice-assistant --release
