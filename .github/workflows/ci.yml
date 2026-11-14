@@ -302,7 +302,6 @@ jobs:
         run: |
           # Install Vosk library into sysroot for cross-compilation (needed for STT)
           WEBOS_SYSROOT=$(find "$GITHUB_WORKSPACE/.build/toolchain" -name "sysroot" -type d 2>/dev/null | head -1)
-          WEBOS_NDK="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot"
           echo "Installing Vosk library into sysroot: $WEBOS_SYSROOT"
           # Try to find vosk in webOS SDK sysroot first
           VOSK_LIB=$(find "$WEBOS_SYSROOT" -name "libvosk.so*" 2>/dev/null | head -1)
@@ -310,25 +309,18 @@ jobs:
           if [ -n "$VOSK_LIB" ] && [ -n "$VOSK_INCLUDE" ]; then
             echo "Found Vosk in webOS SDK sysroot"
           else
-            echo "Vosk not found in webOS SDK, building minimal Vosk library..."
-            # Build minimal Vosk from source for ARM using webOS SDK cross-compiler
-            # We only need the core library, not the full Kaldi dependencies
+            echo "Vosk not found in webOS SDK, downloading pre-built ARMv7 library..."
+            # Download pre-built Vosk ARMv7 library from GitHub releases
             cd /tmp
-            git clone --depth 1 --branch v0.3.45 https://github.com/alphacep/vosk-api.git
-            cd vosk-api/src
-            # Build only the minimal vosk library without Kaldi
-            # The vosk library needs libm for math functions
-            make -j$(nproc) CC="$WEBOS_NDK/bin/arm-webos-linux-gnueabi-gcc" CXX="$WEBOS_NDK/bin/arm-webos-linux-gnueabi-g++" \
-              CFLAGS="--sysroot=$WEBOS_SYSROOT" \
-              CXXFLAGS="--sysroot=$WEBOS_SYSROOT" \
-              LDFLAGS="--sysroot=$WEBOS_SYSROOT -lm" \
-              vosk
+            VOSK_VERSION="0.3.45"
+            wget -q "https://github.com/alphacep/vosk-api/releases/download/v${VOSK_VERSION}/vosk-linux-armv7l-${VOSK_VERSION}.zip"
+            unzip -q "vosk-linux-armv7l-${VOSK_VERSION}.zip"
             # Install to sysroot
             mkdir -p "$WEBOS_SYSROOT/usr/lib"
             mkdir -p "$WEBOS_SYSROOT/usr/include"
-            cp libvosk.so "$WEBOS_SYSROOT/usr/lib/"
-            cp vosk_api.h "$WEBOS_SYSROOT/usr/include/"
-            echo "Vosk library built and installed to sysroot"
+            cp "vosk-linux-armv7l-${VOSK_VERSION}/libvosk.so" "$WEBOS_SYSROOT/usr/lib/"
+            cp "vosk-linux-armv7l-${VOSK_VERSION}/vosk_api.h" "$WEBOS_SYSROOT/usr/include/"
+            echo "Vosk library downloaded and installed to sysroot"
           fi
           # Verify Vosk is in place
           if [ -f "$WEBOS_SYSROOT/usr/lib/libvosk.so" ] && [ -f "$WEBOS_SYSROOT/usr/include/vosk_api.h" ]; then
