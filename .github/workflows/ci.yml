@@ -217,9 +217,18 @@ jobs:
         run: pnpm sdk
       - name: Find and copy ALSA pkg-config for cross-build
         run: |
-          # Find ALSA pkg-config in webOS SDK sysroot
-          WEBOS_SYSROOT="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot/arm-buildroot-linux-gnueabi/sysroot"
+          # Find the webOS SDK sysroot dynamically
+          TOOLCHAIN_DIR="$GITHUB_WORKSPACE/.build/toolchain"
           SDL_WEBOS_PKGCONFIG="$GITHUB_WORKSPACE/.build/sdl-webos/pkgconfig"
+          echo "=== Searching for webOS SDK sysroot ==="
+          ls -la "$TOOLCHAIN_DIR" || echo "Toolchain dir not found"
+          WEBOS_SYSROOT=$(find "$TOOLCHAIN_DIR" -name "sysroot" -type d 2>/dev/null | head -1)
+          echo "Found sysroot: $WEBOS_SYSROOT"
+          if [ -z "$WEBOS_SYSROOT" ] || [ ! -d "$WEBOS_SYSROOT" ]; then
+            echo "ERROR: Could not find sysroot directory"
+            find "$TOOLCHAIN_DIR" -type d 2>/dev/null | head -20
+            exit 1
+          fi
           echo "=== Searching for ALSA pkg-config in webOS SDK sysroot ==="
           echo "Sysroot: $WEBOS_SYSROOT"
           ls -la "$WEBOS_SYSROOT" || echo "Sysroot not accessible"
@@ -248,6 +257,7 @@ jobs:
             ls -la "$WEBOS_SYSROOT/usr/lib/pkgconfig/" 2>/dev/null || echo "Not found"
             echo "Listing /usr/share/pkgconfig in sysroot:"
             ls -la "$WEBOS_SYSROOT/usr/share/pkgconfig/" 2>/dev/null || echo "Not found"
+            exit 1
           fi
       - name: Cross-build and verify the native IPK and Homebrew feed
         id: package
