@@ -301,6 +301,7 @@ jobs:
         run: |
           # Install Vosk library into sysroot for cross-compilation (needed for STT)
           WEBOS_SYSROOT=$(find "$GITHUB_WORKSPACE/.build/toolchain" -name "sysroot" -type d 2>/dev/null | head -1)
+          WEBOS_NDK="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot"
           echo "Installing Vosk library into sysroot: $WEBOS_SYSROOT"
           # Try to find vosk in webOS SDK sysroot first
           VOSK_LIB=$(find "$WEBOS_SYSROOT" -name "libvosk.so*" 2>/dev/null | head -1)
@@ -309,12 +310,12 @@ jobs:
             echo "Found Vosk in webOS SDK sysroot"
           else
             echo "Vosk not found in webOS SDK, building from source..."
-            # Build Vosk from source for ARM
+            # Build Vosk from source for ARM using webOS SDK cross-compiler
             cd /tmp
             git clone --depth 1 --branch v0.3.45 https://github.com/alphacep/vosk-api.git
             cd vosk-api/src
-            # Build for ARM
-            make -j$(nproc) CC=arm-linux-gnueabi-gcc CXX=arm-linux-gnueabi-g++ \
+            # Build for ARM using webOS SDK cross-compiler
+            make -j$(nproc) CC="$WEBOS_NDK/bin/arm-webos-linux-gnueabi-gcc" CXX="$WEBOS_NDK/bin/arm-webos-linux-gnueabi-g++" \
               CFLAGS="--sysroot=$WEBOS_SYSROOT" \
               CXXFLAGS="--sysroot=$WEBOS_SYSROOT" \
               LDFLAGS="--sysroot=$WEBOS_SYSROOT"
