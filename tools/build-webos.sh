@@ -18,7 +18,7 @@ export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER="$CC"
 # The target's soft-float *calling convention* is required by webOS, but its
 # default software FP codegen is not. Match the NDK's ARMv7/VFP baseline while
 # retaining the gnueabi ABI; keep NEON off for portable Rust scalar code.
-export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS="${CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS:-} -C target-cpu=cortex-a9 -C target-feature=-neon,-soft-float -C link-arg=--sysroot=$SYSROOT -C link-arg=-Wl,-rpath,\$ORIGIN/lib"
+export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS="${CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS:-} -C target-cpu=cortex-a9 -C target-feature=-neon,-soft-float -C link-arg=--sysroot=$SYSROOT -C link-arg=-Wl,-rpath,\$ORIGIN/lib -C link-arg=-lm"
 # An executable-only Home mount changes $ORIGIN to /usr/bin. These fallbacks must
 # work before Rust startup; keep the installation list shared with native discovery.
 while IFS= read -r directory; do
