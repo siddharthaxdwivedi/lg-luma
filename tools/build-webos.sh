@@ -47,6 +47,6 @@ if [ ! -d "$VOSK_DIR" ]; then
 fi
 mkdir -p "$SYSROOT/usr/lib" "$SYSROOT/usr/include"
 cp "$VOSK_DIR/libvosk.so" "$SYSROOT/usr/lib/"
-cp "$VOSK_DIR/include/vosk_api.h" "$SYSROOT/usr/include/"
+cp "$VOSK_DIR/vosk_api.h" "$SYSROOT/usr/include/"
 
 exec cargo build --locked --manifest-path "$ROOT/Cargo.toml" --package luma --package luma-tv-helper --target armv7-unknown-linux-gnueabi --features webos,voice-assistant --release

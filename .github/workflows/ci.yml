@@ -330,7 +330,7 @@ jobs:
           if [ -d "$GITHUB_WORKSPACE/vosk-linux-armv7l-0.3.45" ]; then
             echo "Using cached Vosk library"
             cp "$GITHUB_WORKSPACE/vosk-linux-armv7l-0.3.45/libvosk.so" "$WEBOS_SYSROOT/usr/lib/"
-            cp "$GITHUB_WORKSPACE/vosk-linux-armv7l-0.3.45/include/vosk_api.h" "$WEBOS_SYSROOT/usr/include/"
+            cp "$GITHUB_WORKSPACE/vosk-linux-armv7l-0.3.45/vosk_api.h" "$WEBOS_SYSROOT/usr/include/"
           else
             echo "Downloading pre-built Vosk ARMv7 library..."
             cd /tmp
