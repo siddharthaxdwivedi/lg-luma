@@ -18,7 +18,7 @@ export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER="$CC"
 # The target's soft-float *calling convention* is required by webOS, but its
 # default software FP codegen is not. Match the NDK's ARMv7/VFP baseline while
 # retaining the gnueabi ABI; keep NEON off for portable Rust scalar code.
-export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS="${CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS:-} -C target-cpu=cortex-a9 -C target-feature=-neon,-soft-float -C link-arg=--sysroot=$SYSROOT -C link-arg=-Wl,-rpath,\$ORIGIN/lib -C link-arg=-Wl,--start-group -C link-arg=-lasound -C link-arg=-lvosk -C link-arg=-lSDL2 -C link-arg=-lssl -C link-arg=-lcrypto -C link-arg=-lgcc_s -C link-arg=-lutil -C link-arg=-lrt -C link-arg=-lpthread -C link-arg=-lm -C link-arg=-ldl -C link-arg=-lc -C link-arg=-Wl,--end-group"
+export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS="${CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS:-} -C target-cpu=cortex-a9 -C target-feature=-neon,-soft-float -C link-arg=--sysroot=$SYSROOT -C link-arg=-Wl,-rpath,\$ORIGIN/lib -C link-arg=$ROOT/.build/vosk-math-shim.o -C link-arg=-Wl,--start-group -C link-arg=-lasound -C link-arg=-lvosk -C link-arg=-lSDL2 -C link-arg=-lssl -C link-arg=-lcrypto -C link-arg=-lgcc_s -C link-arg=-lutil -C link-arg=-lrt -C link-arg=-lpthread -C link-arg=-lm -C link-arg=-ldl -C link-arg=-lc -C link-arg=-Wl,--end-group"
 # An executable-only Home mount changes $ORIGIN to /usr/bin. These fallbacks must
 # work before Rust startup; keep the installation list shared with native discovery.
 while IFS= read -r directory; do
@@ -48,5 +48,12 @@ fi
 mkdir -p "$SYSROOT/usr/lib" "$SYSROOT/usr/include"
 cp "$VOSK_DIR/libvosk.so" "$SYSROOT/usr/lib/"
 cp "$VOSK_DIR/vosk_api.h" "$SYSROOT/usr/include/"
+
+# libvosk.so references versioned glibc-2.27 float-math symbols that the older
+# webOS libm does not export. Compile a shim providing unversioned definitions
+# and link it into the executable (see tools/vosk-math-shim.c).
+mkdir -p "$ROOT/.build"
+"$CC" -O2 -fPIC -fno-builtin --sysroot="$SYSROOT" \
+  -c "$ROOT/tools/vosk-math-shim.c" -o "$ROOT/.build/vosk-math-shim.o"
 
 exec cargo build --locked --manifest-path "$ROOT/Cargo.toml" --package luma --package luma-tv-helper --target armv7-unknown-linux-gnueabi --features webos,voice-assistant --release
