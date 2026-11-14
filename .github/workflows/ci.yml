@@ -236,17 +236,34 @@ jobs:
           export WEBOS_NDK="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot"
           # Set pkg-config paths for ALSA in webOS SDK sysroot
           WEBOS_SYSROOT="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot/arm-buildroot-linux-gnueabi/sysroot"
+          echo "=== Searching for ALSA pkg-config in webOS SDK sysroot ==="
+          echo "Sysroot: $WEBOS_SYSROOT"
+          ls -la "$WEBOS_SYSROOT" || echo "Sysroot not accessible"
           ALSA_PC=$(find "$WEBOS_SYSROOT" -name "alsa.pc" 2>/dev/null | head -1)
+          echo "ALSA_PC found: $ALSA_PC"
           if [ -n "$ALSA_PC" ]; then
             ALSA_PKG_DIR=$(dirname "$ALSA_PC")
             export PKG_CONFIG_PATH="$ALSA_PKG_DIR"
             export PKG_CONFIG_SYSROOT_DIR="$WEBOS_SYSROOT"
             echo "Found ALSA pkg-config at: $ALSA_PKG_DIR"
             echo "Set PKG_CONFIG_SYSROOT_DIR to: $WEBOS_SYSROOT"
+            echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
+            echo "PKG_CONFIG_SYSROOT_DIR=$PKG_CONFIG_SYSROOT_DIR"
+            # Test pkg-config
+            pkg-config --libs --cflags alsa 2>&1 || echo "pkg-config test failed"
           else
             echo "ALSA pkg-config not found in webOS SDK sysroot"
-            find "$WEBOS_SYSROOT" -name "*.pc" 2>/dev/null | head -20
+            echo "Listing all .pc files in sysroot:"
+            find "$WEBOS_SYSROOT" -name "*.pc" 2>/dev/null | head -30
+            echo "Listing /usr/lib/pkgconfig in sysroot:"
+            ls -la "$WEBOS_SYSROOT/usr/lib/pkgconfig/" 2>/dev/null || echo "Not found"
+            echo "Listing /usr/share/pkgconfig in sysroot:"
+            ls -la "$WEBOS_SYSROOT/usr/share/pkgconfig/" 2>/dev/null || echo "Not found"
           fi
+          # Ensure env vars are available to cargo
+          export PKG_CONFIG_ALLOW_CROSS=1
+          export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1
+          export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
           pnpm build
           node tools/package.mjs
           node tools/repository.mjs
