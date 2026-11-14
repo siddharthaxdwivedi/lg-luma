@@ -297,6 +297,41 @@ jobs:
             echo "ERROR: ALSA headers not found in sysroot after copy"
             exit 1
           fi
+      - name: Install Vosk library into sysroot
+        run: |
+          # Install Vosk library into sysroot for cross-compilation (needed for STT)
+          WEBOS_SYSROOT=$(find "$GITHUB_WORKSPACE/.build/toolchain" -name "sysroot" -type d 2>/dev/null | head -1)
+          echo "Installing Vosk library into sysroot: $WEBOS_SYSROOT"
+          # Try to find vosk in webOS SDK sysroot first
+          VOSK_LIB=$(find "$WEBOS_SYSROOT" -name "libvosk.so*" 2>/dev/null | head -1)
+          VOSK_INCLUDE=$(find "$WEBOS_SYSROOT" -name "vosk_api.h" 2>/dev/null | head -1)
+          if [ -n "$VOSK_LIB" ] && [ -n "$VOSK_INCLUDE" ]; then
+            echo "Found Vosk in webOS SDK sysroot"
+          else
+            echo "Vosk not found in webOS SDK, building from source..."
+            # Build Vosk from source for ARM
+            cd /tmp
+            git clone --depth 1 --branch v0.3.45 https://github.com/alphacep/vosk-api.git
+            cd vosk-api/src
+            # Build for ARM
+            make -j$(nproc) CC=arm-linux-gnueabi-gcc CXX=arm-linux-gnueabi-g++ \
+              CFLAGS="--sysroot=$WEBOS_SYSROOT" \
+              CXXFLAGS="--sysroot=$WEBOS_SYSROOT" \
+              LDFLAGS="--sysroot=$WEBOS_SYSROOT"
+            # Install to sysroot
+            mkdir -p "$WEBOS_SYSROOT/usr/lib"
+            mkdir -p "$WEBOS_SYSROOT/usr/include"
+            cp libvosk.so "$WEBOS_SYSROOT/usr/lib/"
+            cp vosk_api.h "$WEBOS_SYSROOT/usr/include/"
+            echo "Vosk library built and installed to sysroot"
+          fi
+          # Verify Vosk is in place
+          if [ -f "$WEBOS_SYSROOT/usr/lib/libvosk.so" ] && [ -f "$WEBOS_SYSROOT/usr/include/vosk_api.h" ]; then
+            echo "Vosk successfully installed in sysroot"
+          else
+            echo "ERROR: Vosk not found in sysroot after install"
+            exit 1
+          fi
       - name: Cross-build and verify the native IPK and Homebrew feed
         id: package
         run: |
