@@ -237,15 +237,24 @@ jobs:
           if [ -n "$ALSA_PC" ]; then
             ALSA_PKG_DIR=$(dirname "$ALSA_PC")
             echo "Found ALSA pkg-config at: $ALSA_PKG_DIR"
-            echo "Copying ALSA pkg-config to SDL webos pkgconfig dir: $SDL_WEBOS_PKGCONFIG"
+            echo "Copying and patching ALSA pkg-config to SDL webos pkgconfig dir: $SDL_WEBOS_PKGCONFIG"
             mkdir -p "$SDL_WEBOS_PKGCONFIG"
-            cp "$ALSA_PC" "$SDL_WEBOS_PKGCONFIG/"
+            # Copy and patch alsa.pc to use sysroot-relative paths
+            sed "s|^prefix=.*|prefix=\${pc_sysrootdir}/usr|" "$ALSA_PC" > "$SDL_WEBOS_PKGCONFIG/alsa.pc"
+            sed -i "s|^exec_prefix=.*|exec_prefix=\${prefix}|" "$SDL_WEBOS_PKGCONFIG/alsa.pc"
+            sed -i "s|^libdir=.*|libdir=\${exec_prefix}/lib|" "$SDL_WEBOS_PKGCONFIG/alsa.pc"
+            sed -i "s|^includedir=.*|includedir=\${prefix}/include|" "$SDL_WEBOS_PKGCONFIG/alsa.pc"
+            echo "Patched alsa.pc:"
+            cat "$SDL_WEBOS_PKGCONFIG/alsa.pc"
             # Also copy any dependencies
             for dep in $(grep -E '^Requires:' "$ALSA_PC" | sed 's/Requires: //' | tr ',' '\n' | tr -d ' '); do
               DEP_PC=$(find "$WEBOS_SYSROOT" -name "${dep}.pc" 2>/dev/null | head -1)
               if [ -n "$DEP_PC" ]; then
                 echo "Copying dependency: $dep"
-                cp "$DEP_PC" "$SDL_WEBOS_PKGCONFIG/"
+                sed "s|^prefix=.*|prefix=\${pc_sysrootdir}/usr|" "$DEP_PC" > "$SDL_WEBOS_PKGCONFIG/$(basename "$DEP_PC")"
+                sed -i "s|^exec_prefix=.*|exec_prefix=\${prefix}|" "$SDL_WEBOS_PKGCONFIG/$(basename "$DEP_PC")"
+                sed -i "s|^libdir=.*|libdir=\${exec_prefix}/lib|" "$SDL_WEBOS_PKGCONFIG/$(basename "$DEP_PC")"
+                sed -i "s|^includedir=.*|includedir=\${prefix}/include|" "$SDL_WEBOS_PKGCONFIG/$(basename "$DEP_PC")"
               fi
             done
             ls -la "$SDL_WEBOS_PKGCONFIG/"
