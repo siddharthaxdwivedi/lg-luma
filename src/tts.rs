@@ -4,12 +4,18 @@
 //! it via espeak-ng, and computes real-time RMS for the Voice Orb's
 //! dual-reactivity pulse.
 
+#[cfg(feature = "voice-assistant")]
 use std::sync::Arc;
+#[cfg(feature = "voice-assistant")]
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
+#[cfg(feature = "voice-assistant")]
 use std::thread;
+#[cfg(feature = "voice-assistant")]
 use std::time::Duration;
 
+#[cfg(feature = "voice-assistant")]
 use crossbeam_channel::{Receiver, Sender, bounded};
+#[cfg(feature = "voice-assistant")]
 use espeak_ng::{EspeakNg, Parameter};
 
 /// Commands sent to the TTS thread.

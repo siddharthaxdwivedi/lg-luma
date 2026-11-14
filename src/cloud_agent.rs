@@ -4,10 +4,13 @@
 //! with conversation history and installed app context. Supports three actions:
 //! SPEAK, LAUNCH, SEARCH. SEARCH triggers a web search + second Qwen call.
 
+#[cfg(feature = "voice-assistant")]
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
+#[cfg(feature = "voice-assistant")]
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+#[cfg(feature = "voice-assistant")]
 use tokio::sync::Mutex;
 
 const NIM_ENDPOINT: &str = "https://integrate.api.nvidia.com/v1/chat/completions";

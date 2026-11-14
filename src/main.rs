@@ -5,6 +5,7 @@ mod app_artwork;
 #[path = "app-subscription.rs"]
 mod app_subscription;
 mod branding;
+#[cfg(feature = "voice-assistant")]
 mod cloud_agent;
 mod companion;
 mod damage;
@@ -27,10 +28,12 @@ mod scroll_preview;
 mod sdl_events;
 mod state;
 mod storage;
+#[cfg(feature = "voice-assistant")]
 mod stt;
 mod text_rendering;
 #[path = "tile-editor.rs"]
 mod tile_editor;
+#[cfg(feature = "voice-assistant")]
 mod tts;
 mod update;
 mod vector;
@@ -881,6 +884,7 @@ fn run() -> Result<(), String> {
     let _voice = voice::Voice::start(voice_event, event_subsystem.event_sender());
 
     // Voice Assistant: initialize STT engine (Vosk) for voice transcription.
+    #[cfg(feature = "voice-assistant")]
     let stt_handle = stt::SttHandle::spawn(stt::SttConfig::default())
         .map_err(|e| {
             eprintln!("Voice Assistant STT init failed: {e}");
@@ -889,10 +893,12 @@ fn run() -> Result<(), String> {
         .ok();
 
     // Voice Assistant: share STT RMS with the Voice Orb for mic reactivity.
+    #[cfg(feature = "voice-assistant")]
     let _stt_rms = stt_handle.as_ref().map(|h| h.rms.clone());
 
     // Voice Assistant: initialize TTS engine (espeak-ng) for voice synthesis.
     // Share the TTS RMS atomic with the Voice Orb for dual-reactivity.
+    #[cfg(feature = "voice-assistant")]
     let tts_handle = tts::TtsHandle::spawn(state.tts_rms_atomic.clone())
         .map_err(|e| {
             eprintln!("Voice Assistant TTS init failed: {e}");
