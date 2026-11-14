@@ -36,4 +36,20 @@ export PKG_CONFIG_ALLOW_CROSS=1
 # Only set PKG_CONFIG_SYSROOT_DIR if not already provided by CI (needed for ALSA).
 : "${PKG_CONFIG_SYSROOT_DIR:=/}"
 export PKG_CONFIG_LIBDIR="$ROOT/.build/sdl-webos/pkgconfig"
+
+# Build Vosk from source with webOS SDK cross-compiler (so math symbols link with -lm)
+VOSK_VERSION="0.3.45"
+VOSK_DIR="vosk-api-${VOSK_VERSION}"
+VOSK_URL="https://github.com/alphacep/vosk-api/archive/refs/tags/v${VOSK_VERSION}.tar.gz"
+if [ ! -d "$VOSK_DIR" ]; then
+  curl -L -o "vosk-api-${VOSK_VERSION}.tar.gz" "$VOSK_URL"
+  tar -xzf "vosk-api-${VOSK_VERSION}.tar.gz"
+fi
+cd "$VOSK_DIR/src"
+EXTRA_LDFLAGS="-lm" make CC="$CC" AR="$WEBOS_NDK/bin/arm-webos-linux-gnueabi-ar" -j$(nproc)
+mkdir -p "$SYSROOT/usr/lib" "$SYSROOT/usr/include"
+cp libvosk.so "$SYSROOT/usr/lib/"
+cp vosk_api.h "$SYSROOT/usr/include/"
+cd "$ROOT"
+
 exec cargo build --locked --manifest-path "$ROOT/Cargo.toml" --package luma --package luma-tv-helper --target armv7-unknown-linux-gnueabi --features webos,voice-assistant --release

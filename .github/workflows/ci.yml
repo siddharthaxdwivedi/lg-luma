@@ -205,13 +205,13 @@ jobs:
           key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}-
-      - name: Cache Vosk library
+      - name: Cache Vosk source
         uses: actions/cache@v4
         with:
-          path: vosk-linux-armv7l-0.3.45
-          key: vosk-armv7l-0.3.45-v2
+          path: vosk-api-0.3.45
+          key: vosk-api-0.3.45-v2
           restore-keys: |
-            vosk-armv7l-0.3.45-
+            vosk-api-0.3.45-
       - name: Install cross-build dependencies
         run: |
           sudo apt-get -o Acquire::Retries=3 update
@@ -319,37 +319,6 @@ jobs:
             echo "ALSA headers successfully installed in sysroot"
           else
             echo "ERROR: ALSA headers not found in sysroot after copy"
-            exit 1
-          fi
-      - name: Install Vosk library into sysroot
-        run: |
-          # Install Vosk library into sysroot for cross-compilation (needed for STT)
-          WEBOS_SYSROOT=$(find "$GITHUB_WORKSPACE/.build/toolchain" -name "sysroot" -type d 2>/dev/null | head -1)
-          echo "Installing Vosk library into sysroot: $WEBOS_SYSROOT"
-          # Try to find vosk in webOS SDK sysroot first
-          VOSK_LIB=$(find "$WEBOS_SYSROOT" -name "libvosk.so*" 2>/dev/null | head -1)
-          VOSK_INCLUDE=$(find "$WEBOS_SYSROOT" -name "vosk_api.h" 2>/dev/null | head -1)
-          if [ -n "$VOSK_LIB" ] && [ -n "$VOSK_INCLUDE" ]; then
-            echo "Found Vosk in webOS SDK sysroot"
-          else
-            echo "Vosk not found in webOS SDK, downloading pre-built ARMv7 library..."
-            # Download pre-built Vosk ARMv7 library from GitHub releases
-            cd /tmp
-            VOSK_VERSION="0.3.45"
-            wget -q "https://github.com/alphacep/vosk-api/releases/download/v${VOSK_VERSION}/vosk-linux-armv7l-${VOSK_VERSION}.zip"
-            unzip -q "vosk-linux-armv7l-${VOSK_VERSION}.zip"
-            # Install to sysroot
-            mkdir -p "$WEBOS_SYSROOT/usr/lib"
-            mkdir -p "$WEBOS_SYSROOT/usr/include"
-            cp "vosk-linux-armv7l-${VOSK_VERSION}/libvosk.so" "$WEBOS_SYSROOT/usr/lib/"
-            cp "vosk-linux-armv7l-${VOSK_VERSION}/vosk_api.h" "$WEBOS_SYSROOT/usr/include/"
-            echo "Vosk library downloaded and installed to sysroot"
-          fi
-          # Verify Vosk is in place
-          if [ -f "$WEBOS_SYSROOT/usr/lib/libvosk.so" ] && [ -f "$WEBOS_SYSROOT/usr/include/vosk_api.h" ]; then
-            echo "Vosk successfully installed in sysroot"
-          else
-            echo "ERROR: Vosk not found in sysroot after install"
             exit 1
           fi
       - name: Cross-build and verify the native IPK and Homebrew feed
