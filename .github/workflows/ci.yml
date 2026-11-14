@@ -208,6 +208,13 @@ jobs:
           echo "OPENSSL_DIR=/usr/local/ssl-arm" >> $GITHUB_ENV
           echo "OPENSSL_LIB_DIR=/usr/local/ssl-arm/lib" >> $GITHUB_ENV
           echo "OPENSSL_INCLUDE_DIR=/usr/local/ssl-arm/include" >> $GITHUB_ENV
+      - uses: actions/download-artifact@v8
+        with:
+          name: smoke-inputs
+      - name: Restore generated native assets
+        run: tar -xzf smoke-inputs.tar.gz .build/assets
+      - name: Set up the webOS SDK
+        run: pnpm sdk
       - name: Find and copy ALSA pkg-config for cross-build
         run: |
           # Find ALSA pkg-config in webOS SDK sysroot
@@ -242,13 +249,6 @@ jobs:
             echo "Listing /usr/share/pkgconfig in sysroot:"
             ls -la "$WEBOS_SYSROOT/usr/share/pkgconfig/" 2>/dev/null || echo "Not found"
           fi
-      - uses: actions/download-artifact@v8
-        with:
-          name: smoke-inputs
-      - name: Restore generated native assets
-        run: tar -xzf smoke-inputs.tar.gz .build/assets
-      - name: Set up the webOS SDK
-        run: pnpm sdk
       - name: Cross-build and verify the native IPK and Homebrew feed
         id: package
         run: |
