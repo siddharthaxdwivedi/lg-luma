@@ -29,9 +29,11 @@ export AR_armv7_unknown_linux_gnueabi="$WEBOS_NDK/bin/arm-webos-linux-gnueabi-ar
 export CFLAGS_armv7_unknown_linux_gnueabi="${CFLAGS_armv7_unknown_linux_gnueabi:-} --sysroot=$SYSROOT"
 export PKG_CONFIG_ALLOW_CROSS=1
 # Nix's desktop SDL pkg-config path must not leak into this ARM build.
-export PKG_CONFIG_PATH=
+# Only set PKG_CONFIG_PATH if not already provided by CI (needed for ALSA).
+: "${PKG_CONFIG_PATH:=$ROOT/.build/sdl-webos/pkgconfig}"
 # This metadata contains absolute paths to the verified cross-built SDL runtime,
 # so pkg-config must not prepend the target sysroot to those build-host paths.
-export PKG_CONFIG_SYSROOT_DIR=/
+# Only set PKG_CONFIG_SYSROOT_DIR if not already provided by CI (needed for ALSA).
+: "${PKG_CONFIG_SYSROOT_DIR:=/}"
 export PKG_CONFIG_LIBDIR="$ROOT/.build/sdl-webos/pkgconfig"
 exec cargo build --locked --manifest-path "$ROOT/Cargo.toml" --package luma --package luma-tv-helper --target armv7-unknown-linux-gnueabi --features webos --release
