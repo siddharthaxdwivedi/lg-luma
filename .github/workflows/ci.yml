@@ -52,6 +52,8 @@ jobs:
     name: Checks, unit tests, and shared desktop assets
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      WHISPER_DONT_GENERATE_BINDINGS: '1'
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -73,7 +75,7 @@ jobs:
           apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
           sudo apt-get "${apt_options[@]}" update
           # FontTools recommends large optional scientific Python packages. xauth is needed by xvfb-run.
-          # Vosk build feature requires: cmake, build-essential, libasound2-dev, libssl-dev
+          # whisper.cpp STT build requires: cmake, build-essential, libasound2-dev, libssl-dev
           sudo apt-get "${apt_options[@]}" install -y --no-install-recommends \
             libsdl2-dev pkg-config woff2 python3-fonttools libgl1-mesa-dri xvfb xauth \
             cmake build-essential libasound2-dev libssl-dev
@@ -98,15 +100,19 @@ jobs:
           cargo test --locked --workspace --all-features --exclude luma
       - name: Generate native assets
         run: pnpm assets
-      # - name: Build shared desktop preview
-      #   run: cargo build --locked --package luma --no-default-features --features webos
-      - name: Bundle shared smoke inputs
+      - name: Download Whisper STT assets
         run: |
-          # Create dummy luma binary for smoke tests (desktop build skipped)
-          mkdir -p target/debug
-          echo '#!/bin/sh\necho "dummy luma binary for smoke tests"' > target/debug/luma
-          chmod +x target/debug/luma
-          tar -czf smoke-inputs.tar.gz .build/assets target/debug/luma
+          mkdir -p .build/assets
+          curl --fail --location --retry 3 --output .build/assets/ggml-base.en.bin \
+            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+          test -s .build/assets/ggml-base.en.bin
+          curl --fail --location --retry 3 --output .build/assets/ggml-silero-v5.1.2.bin \
+            https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
+          test -s .build/assets/ggml-silero-v5.1.2.bin
+      - name: Build shared desktop preview
+        run: cargo build --locked --package luma --features webos,voice-assistant
+      - name: Bundle shared smoke inputs
+        run: tar -czf smoke-inputs.tar.gz .build/assets target/debug/luma
       - uses: actions/upload-artifact@v7
         with:
           name: smoke-inputs
@@ -146,7 +152,7 @@ jobs:
         run: |
           apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
           sudo apt-get "${apt_options[@]}" update
-          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends libsdl2-2.0-0 libgl1-mesa-dri xvfb xauth
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends libsdl2-2.0-0 libasound2t64 libgl1-mesa-dri xvfb xauth
       - uses: actions/download-artifact@v8
         with:
           name: smoke-inputs
@@ -173,6 +179,8 @@ jobs:
     needs: prepare
     runs-on: ubuntu-22.04
     timeout-minutes: 30
+    env:
+      WHISPER_DONT_GENERATE_BINDINGS: '1'
     outputs:
       tag: ${{ steps.package.outputs.tag }}
     steps:
@@ -205,17 +213,10 @@ jobs:
           key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}-${{ github.sha }}
           restore-keys: |
             ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}-
-      - name: Cache Vosk library
-        uses: actions/cache@v4
-        with:
-          path: vosk-linux-armv7l-0.3.45
-          key: vosk-linux-armv7l-0.3.45-v2
-          restore-keys: |
-            vosk-linux-armv7l-0.3.45-
       - name: Install cross-build dependencies
         run: |
           sudo apt-get -o Acquire::Retries=3 update
-          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends pkg-config build-essential gcc-arm-linux-gnueabi libc6-dev-armel-cross
+          sudo apt-get -o Acquire::Retries=3 install -y --no-install-recommends pkg-config build-essential cmake gcc-arm-linux-gnueabi libc6-dev-armel-cross
       - uses: actions/download-artifact@v8
         with:
           name: smoke-inputs
@@ -319,37 +320,6 @@ jobs:
             echo "ALSA headers successfully installed in sysroot"
           else
             echo "ERROR: ALSA headers not found in sysroot after copy"
-            exit 1
-          fi
-      - name: Install Vosk library into sysroot
-        run: |
-          # Install pre-built Vosk library into sysroot for cross-compilation (needed for STT)
-          WEBOS_SYSROOT=$(find "$GITHUB_WORKSPACE/.build/toolchain" -name "sysroot" -type d 2>/dev/null | head -1)
-          echo "Installing Vosk library into sysroot: $WEBOS_SYSROOT"
-          # Try to find cached Vosk library
-          if [ -d "$GITHUB_WORKSPACE/vosk-linux-armv7l-0.3.45" ]; then
-            echo "Using cached Vosk library"
-            cp "$GITHUB_WORKSPACE/vosk-linux-armv7l-0.3.45/libvosk.so" "$WEBOS_SYSROOT/usr/lib/"
-            cp "$GITHUB_WORKSPACE/vosk-linux-armv7l-0.3.45/vosk_api.h" "$WEBOS_SYSROOT/usr/include/"
-          else
-            echo "Downloading pre-built Vosk ARMv7 library..."
-            cd /tmp
-            VOSK_VERSION="0.3.45"
-            wget -q "https://github.com/alphacep/vosk-api/releases/download/v${VOSK_VERSION}/vosk-linux-armv7l-${VOSK_VERSION}.zip"
-            unzip -q "vosk-linux-armv7l-${VOSK_VERSION}.zip"
-            # Copy to workspace for caching
-            cp -r "vosk-linux-armv7l-${VOSK_VERSION}" "$GITHUB_WORKSPACE/"
-            # Install to sysroot
-            mkdir -p "$WEBOS_SYSROOT/usr/lib"
-            mkdir -p "$WEBOS_SYSROOT/usr/include"
-            cp "vosk-linux-armv7l-${VOSK_VERSION}/libvosk.so" "$WEBOS_SYSROOT/usr/lib/"
-            cp "vosk-linux-armv7l-${VOSK_VERSION}/vosk_api.h" "$WEBOS_SYSROOT/usr/include/"
-          fi
-          # Verify Vosk is in place
-          if [ -f "$WEBOS_SYSROOT/usr/lib/libvosk.so" ] && [ -f "$WEBOS_SYSROOT/usr/include/vosk_api.h" ]; then
-            echo "Vosk successfully installed in sysroot"
-          else
-            echo "ERROR: Vosk not found in sysroot after install"
             exit 1
           fi
       - name: Cross-build and verify the native IPK and Homebrew feed

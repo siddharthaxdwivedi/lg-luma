@@ -8,7 +8,7 @@ A highly optimized, deeply modified fork of Luma for the LG C1 (webOS 6).
 - **Parallax Wallpapers:** 4K backgrounds shift based on app focus.
 - **Reactive Voice Orb:** GLSL shader with simulated audio fallback.
 - **Glass UI:** Fixed straight-alpha blending and 25% milky glass tiles.
-- **Siri-Style Voice Assistant:** Full STT → Qwen (NVIDIA NIM) → TTS pipeline with dual-reactivity Voice Orb (mic + TTS audio), live web search, conversation memory, and silent app launch.
+- **Siri-Style Voice Assistant:** On-device whisper.cpp STT with Silero VAD and a command-mode grammar, then local TV commands, then Qwen (NVIDIA NIM), then espeak-ng TTS, with a dual-reactivity Voice Orb (mic + TTS audio), hands-free endpointing, live web search, conversation memory, and silent app launch.
 
 ## Voice Assistant Setup
 
@@ -19,6 +19,30 @@ ssh -i pwnLG/pwn_ed25519 root@192.168.1.126 "echo 'YOUR_KEY' > /var/lib/luma-hom
 ```
 
 The key is read at runtime from `/var/lib/luma-home/.nim_key` and is never logged or exposed.
+
+### On-device speech recognition
+
+Speech is transcribed on the TV by whisper.cpp, so audio never leaves the device. Whisper only
+runs after Silero VAD finds speech in the clip: opening the orb samples 500 ms of room noise,
+capture starts when the level clears that noise floor, and the utterance ends after 1.5 s of
+continuous silence. Decoding is capped at two threads so the TV keeps a core free.
+
+Whisper runs in command mode against `assets/commands.gbnf`, which biases it toward TV phrases
+(`open <app>`, `launch <app>`, `search for <phrase>`). A transcript that matches an installed app
+is launched locally with no network round trip; anything else is forwarded to Qwen.
+
+Three files are read from the app's `assets/` directory at runtime:
+
+| File | Purpose | Source |
+| --- | --- | --- |
+| `ggml-base.en.bin` | Whisper English model | [whisper.cpp models](https://huggingface.co/ggerganov/whisper.cpp) |
+| `ggml-silero-v5.1.2.bin` | Silero VAD | [ggml-org/whisper-vad](https://huggingface.co/ggml-org/whisper-vad) |
+| `commands.gbnf` | Command-mode grammar | `assets/commands.gbnf` in this repository |
+
+The models are downloaded during packaging and are not stored in the repository. To change them,
+replace the files in the installed package's `assets/` directory; the grammar is edited in
+`assets/commands.gbnf` and rebuilt. `ggml-tiny.en.bin` is deliberately not used: it is too
+inaccurate for far-field speech at living-room distance.
 
 ## Architecture
 

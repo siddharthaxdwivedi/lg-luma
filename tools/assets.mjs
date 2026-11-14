@@ -49,6 +49,9 @@ if (weights.error || weights.status !== 0) {
 await fs.copyFile(path.join(source, 'fonts/ofl.txt'), path.join(out, 'font-license.txt'));
 await fs.copyFile(path.join(source, 'fonts/noto-ofl.txt'), path.join(out, 'font-cjk-license.txt'));
 
+// Whisper command grammar, loaded at runtime beside the STT model.
+await fs.copyFile(path.join(source, 'commands.gbnf'), path.join(out, 'commands.gbnf'));
+
 for (const file of await fs.readdir(path.join(source, 'wallpapers'))) {
   if (!/\.(jpg|svg)$/.test(file)) continue;
   const id = path.parse(file).name;

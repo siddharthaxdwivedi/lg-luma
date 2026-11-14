@@ -1,0 +1,16 @@
+# Luma TV command grammar for whisper.cpp command mode.
+# Stay within the GBNF subset implemented by src/stt/grammar.rs.
+root ::= sp command
+
+command ::= open | launch | search | control
+
+open ::= "open" sp target
+launch ::= "launch" sp target
+search ::= "search" sp "for" sp phrase
+
+target ::= "youtube" | "netflix" | "prime" sp "video" | "disney" sp "plus" | "hulu" | "spotify" | "browser" | phrase
+
+control ::= "volume" sp "up" | "volume" sp "down" | "turn" sp ("on" | "off") | "pause" | "play" | "stop" | "go" sp "home"
+
+sp ::= " "*
+phrase ::= [a-z0-9 '-]+

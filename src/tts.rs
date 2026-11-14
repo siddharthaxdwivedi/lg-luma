@@ -39,7 +39,7 @@ pub struct TtsHandle {
     /// Shared RMS level for the Voice Orb (0.0-1.0, stored as f32 bits).
     _rms: Arc<AtomicI32>,
     /// Whether TTS is currently speaking.
-    _is_speaking: Arc<AtomicBool>,
+    is_speaking: Arc<AtomicBool>,
     _thread: thread::JoinHandle<()>,
 }
 
@@ -66,7 +66,7 @@ impl TtsHandle {
             cmd_tx,
             _evt_rx: evt_rx,
             _rms: rms,
-            _is_speaking: is_speaking,
+            is_speaking,
             _thread: thread,
         })
     }
@@ -79,6 +79,12 @@ impl TtsHandle {
     /// Stop current speech.
     pub fn stop(&self) {
         let _ = self.cmd_tx.send(TtsCommand::Stop);
+    }
+
+    /// Whether the TTS thread is currently speaking. STT reads this to avoid
+    /// transcribing the TV's own voice.
+    pub fn speaking_flag(&self) -> Arc<AtomicBool> {
+        self.is_speaking.clone()
     }
 
     /// Try to receive the next TTS event (non-blocking).
