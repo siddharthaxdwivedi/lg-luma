@@ -208,20 +208,39 @@ jobs:
           echo "OPENSSL_DIR=/usr/local/ssl-arm" >> $GITHUB_ENV
           echo "OPENSSL_LIB_DIR=/usr/local/ssl-arm/lib" >> $GITHUB_ENV
           echo "OPENSSL_INCLUDE_DIR=/usr/local/ssl-arm/include" >> $GITHUB_ENV
-      - name: Set ALSA pkg-config path for webOS SDK
+      - name: Find and copy ALSA pkg-config for cross-build
         run: |
           # Find ALSA pkg-config in webOS SDK sysroot
           WEBOS_SYSROOT="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot/arm-buildroot-linux-gnueabi/sysroot"
+          SDL_WEBOS_PKGCONFIG="$GITHUB_WORKSPACE/.build/sdl-webos/pkgconfig"
+          echo "=== Searching for ALSA pkg-config in webOS SDK sysroot ==="
+          echo "Sysroot: $WEBOS_SYSROOT"
+          ls -la "$WEBOS_SYSROOT" || echo "Sysroot not accessible"
           ALSA_PC=$(find "$WEBOS_SYSROOT" -name "alsa.pc" 2>/dev/null | head -1)
+          echo "ALSA_PC found: $ALSA_PC"
           if [ -n "$ALSA_PC" ]; then
             ALSA_PKG_DIR=$(dirname "$ALSA_PC")
-            echo "PKG_CONFIG_PATH=$ALSA_PKG_DIR" >> $GITHUB_ENV
-            echo "PKG_CONFIG_SYSROOT_DIR=$WEBOS_SYSROOT" >> $GITHUB_ENV
             echo "Found ALSA pkg-config at: $ALSA_PKG_DIR"
-            echo "Set PKG_CONFIG_SYSROOT_DIR to: $WEBOS_SYSROOT"
+            echo "Copying ALSA pkg-config to SDL webos pkgconfig dir: $SDL_WEBOS_PKGCONFIG"
+            mkdir -p "$SDL_WEBOS_PKGCONFIG"
+            cp "$ALSA_PC" "$SDL_WEBOS_PKGCONFIG/"
+            # Also copy any dependencies
+            for dep in $(grep -E '^Requires:' "$ALSA_PC" | sed 's/Requires: //' | tr ',' '\n' | tr -d ' '); do
+              DEP_PC=$(find "$WEBOS_SYSROOT" -name "${dep}.pc" 2>/dev/null | head -1)
+              if [ -n "$DEP_PC" ]; then
+                echo "Copying dependency: $dep"
+                cp "$DEP_PC" "$SDL_WEBOS_PKGCONFIG/"
+              fi
+            done
+            ls -la "$SDL_WEBOS_PKGCONFIG/"
           else
             echo "ALSA pkg-config not found in webOS SDK sysroot"
-            find "$WEBOS_SYSROOT" -name "*.pc" 2>/dev/null | head -20
+            echo "Listing all .pc files in sysroot:"
+            find "$WEBOS_SYSROOT" -name "*.pc" 2>/dev/null | head -30
+            echo "Listing /usr/lib/pkgconfig in sysroot:"
+            ls -la "$WEBOS_SYSROOT/usr/lib/pkgconfig/" 2>/dev/null || echo "Not found"
+            echo "Listing /usr/share/pkgconfig in sysroot:"
+            ls -la "$WEBOS_SYSROOT/usr/share/pkgconfig/" 2>/dev/null || echo "Not found"
           fi
       - uses: actions/download-artifact@v8
         with:
@@ -234,36 +253,6 @@ jobs:
         id: package
         run: |
           export WEBOS_NDK="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot"
-          # Set pkg-config paths for ALSA in webOS SDK sysroot
-          WEBOS_SYSROOT="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot/arm-buildroot-linux-gnueabi/sysroot"
-          echo "=== Searching for ALSA pkg-config in webOS SDK sysroot ==="
-          echo "Sysroot: $WEBOS_SYSROOT"
-          ls -la "$WEBOS_SYSROOT" || echo "Sysroot not accessible"
-          ALSA_PC=$(find "$WEBOS_SYSROOT" -name "alsa.pc" 2>/dev/null | head -1)
-          echo "ALSA_PC found: $ALSA_PC"
-          if [ -n "$ALSA_PC" ]; then
-            ALSA_PKG_DIR=$(dirname "$ALSA_PC")
-            export PKG_CONFIG_PATH="$ALSA_PKG_DIR"
-            export PKG_CONFIG_SYSROOT_DIR="$WEBOS_SYSROOT"
-            echo "Found ALSA pkg-config at: $ALSA_PKG_DIR"
-            echo "Set PKG_CONFIG_SYSROOT_DIR to: $WEBOS_SYSROOT"
-            echo "PKG_CONFIG_PATH=$PKG_CONFIG_PATH"
-            echo "PKG_CONFIG_SYSROOT_DIR=$PKG_CONFIG_SYSROOT_DIR"
-            # Test pkg-config
-            pkg-config --libs --cflags alsa 2>&1 || echo "pkg-config test failed"
-          else
-            echo "ALSA pkg-config not found in webOS SDK sysroot"
-            echo "Listing all .pc files in sysroot:"
-            find "$WEBOS_SYSROOT" -name "*.pc" 2>/dev/null | head -30
-            echo "Listing /usr/lib/pkgconfig in sysroot:"
-            ls -la "$WEBOS_SYSROOT/usr/lib/pkgconfig/" 2>/dev/null || echo "Not found"
-            echo "Listing /usr/share/pkgconfig in sysroot:"
-            ls -la "$WEBOS_SYSROOT/usr/share/pkgconfig/" 2>/dev/null || echo "Not found"
-          fi
-          # Ensure env vars are available to cargo
-          export PKG_CONFIG_ALLOW_CROSS=1
-          export PKG_CONFIG_ALLOW_SYSTEM_CFLAGS=1
-          export PKG_CONFIG_ALLOW_SYSTEM_LIBS=1
           pnpm build
           node tools/package.mjs
           node tools/repository.mjs
