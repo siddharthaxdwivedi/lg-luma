@@ -36,7 +36,7 @@ ureq = { version = "3.4", default-features = false, features = ["rustls"] }
 # Voice Assistant: STT, TTS, Cloud API
 whisper-rs-sys = "0.15"
 espeak-ng = { version = "0.2", features = ["bundled-data-en"] }
-reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "sync", "time"] }
 crossbeam-channel = "0.5"
 alsa = "0.12"

@@ -138,6 +138,20 @@ if (!(await fs.readdir(path.join(stage, 'lib'))).includes(sdlName)) {
   const runtime = await prepareWebosRuntime();
   await copyLibrary(path.join(runtime, 'lib'), sdlName);
 }
+// whisper.cpp needs the toolchain's C++ runtime; the TV ships an older libstdc++.
+const nativeLibs = path.join(root, '.build/native-libs');
+let nativeLibNames = [];
+try {
+  nativeLibNames = await fs.readdir(nativeLibs);
+} catch (error) {
+  if (error.code !== 'ENOENT') throw error;
+}
+for (const name of nativeLibNames) {
+  if (/\.so(?:\.[0-9]+)*$/.test(name)) await copyLibrary(nativeLibs, name);
+}
+if (!(await fs.readdir(path.join(stage, 'lib'))).includes('libstdc++.so.6')) {
+  throw new Error('Missing libstdc++.so.6; run pnpm build to stage the webOS C++ runtime.');
+}
 await fs.cp(path.join(root, 'assets/licenses'), path.join(stage, 'licenses'), { recursive: true });
 await fs.writeFile(path.join(stage, 'appinfo.json'), `${JSON.stringify(manifest, null, 2)}\n`);
 const state = path.join(out, 'cli-state');

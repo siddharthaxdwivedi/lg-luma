@@ -13,12 +13,18 @@ if [ ! -f "$SYSROOT/usr/include/stdint.h" ]; then
   SYSROOT="$WEBOS_NDK/arm-webos-linux-gnueabi/sysroot"
 fi
 [ -f "$SYSROOT/usr/include/stdint.h" ] || { printf '%s\n' "Missing webOS sysroot headers: $SYSROOT" >&2; exit 1; }
+# whisper.cpp is C++ and needs libstdc++; the TV's copy is older than the
+# GLIBCXX versions this toolchain emits, so stage the matching runtime for lib/.
+mkdir -p "$ROOT/.build/native-libs"
+LIBSTDCXX=$("$CC" -print-file-name=libstdc++.so.6)
+[ -f "$LIBSTDCXX" ] || { printf '%s\n' "Cannot locate libstdc++.so.6 in the webOS toolchain" >&2; exit 1; }
+cp -L "$LIBSTDCXX" "$ROOT/.build/native-libs/libstdc++.so.6"
 node "$ROOT/tools/webos-runtime.mjs"
 export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_LINKER="$CC"
 # The target's soft-float *calling convention* is required by webOS, but its
 # default software FP codegen is not. Match the NDK's ARMv7/VFP baseline while
 # retaining the gnueabi ABI; keep NEON off for portable Rust scalar code.
-export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS="${CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS:-} -C target-cpu=cortex-a9 -C target-feature=-neon,-soft-float -C link-arg=--sysroot=$SYSROOT -C link-arg=-Wl,-rpath,\$ORIGIN/lib -C link-arg=-Wl,--start-group -C link-arg=-lasound -C link-arg=-lSDL2 -C link-arg=-lssl -C link-arg=-lcrypto -C link-arg=-lgcc_s -C link-arg=-lutil -C link-arg=-lrt -C link-arg=-lpthread -C link-arg=-lm -C link-arg=-ldl -C link-arg=-lc -C link-arg=-Wl,--end-group"
+export CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS="${CARGO_TARGET_ARMV7_UNKNOWN_LINUX_GNUEABI_RUSTFLAGS:-} -C target-cpu=cortex-a9 -C target-feature=-neon,-soft-float -C link-arg=--sysroot=$SYSROOT -C link-arg=-Wl,-rpath,\$ORIGIN/lib -C link-arg=-Wl,--start-group -C link-arg=-lasound -C link-arg=-lSDL2 -C link-arg=-lgcc_s -C link-arg=-lutil -C link-arg=-lrt -C link-arg=-lpthread -C link-arg=-lm -C link-arg=-ldl -C link-arg=-lc -C link-arg=-Wl,--end-group"
 # An executable-only Home mount changes $ORIGIN to /usr/bin. These fallbacks must
 # work before Rust startup; keep the installation list shared with native discovery.
 while IFS= read -r directory; do
