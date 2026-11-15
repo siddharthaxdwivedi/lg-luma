@@ -139,7 +139,28 @@ impl Engine {
             params.i_start_rule = 0;
         }
 
-        // SAFETY: the context, state, parameters, audio and grammar all outlive the call.
+        let text = self.run_decode(&audio, params)?;
+        if !text.is_empty() || rules.is_empty() {
+            return Ok(text);
+        }
+
+        // A grammar that matches nothing in the clip yields no tokens at all.
+        // Decoding again without it keeps "open youtube" working while the
+        // grammar still biases every clip it does match.
+        eprintln!("Luma STT: command grammar produced no tokens, decoding without it");
+        params.grammar_rules = ptr::null_mut();
+        params.n_grammar_rules = 0;
+        params.i_start_rule = 0;
+        self.run_decode(&audio, params)
+    }
+
+    /// Decode one clip and join the text of its segments.
+    fn run_decode(
+        &mut self,
+        audio: &[f32],
+        params: sys::whisper_full_params,
+    ) -> Result<String, String> {
+        // SAFETY: the context, state, parameters and audio all outlive the call.
         let status = unsafe {
             sys::whisper_full_with_state(
                 self.ctx,
@@ -165,7 +186,12 @@ impl Engine {
             // SAFETY: whisper.cpp returns a NUL-terminated string owned by the state.
             text.push_str(&unsafe { CStr::from_ptr(piece) }.to_string_lossy());
         }
-        Ok(text.trim().to_string())
+        let text = text.trim().to_string();
+        eprintln!(
+            "Luma STT: decode status={status} segments={count} grammar={} text={text:?}",
+            !params.grammar_rules.is_null()
+        );
+        Ok(text)
     }
 
     /// Sample range Silero VAD classifies as speech, or `None` for silence.

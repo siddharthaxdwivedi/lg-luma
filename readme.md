@@ -6,7 +6,7 @@ A highly optimized, deeply modified fork of Luma for the LG C1 (webOS 6).
 
 - **60fps Locked UI:** Persistent vertex buffers and cached text geometry.
 - **Parallax Wallpapers:** 4K backgrounds shift based on app focus.
-- **Reactive Voice Orb:** GLSL shader with simulated audio fallback.
+- **Reactive Voice Orb:** Dark polished sphere with a drifting iridescent seam, low on the screen, reacting to live microphone and TTS levels (with a simulated envelope as a fallback).
 - **Glass UI:** Fixed straight-alpha blending and 25% milky glass tiles.
 - **Siri-Style Voice Assistant:** On-device whisper.cpp STT with Silero VAD and a command-mode grammar, then local TV commands, then Qwen (NVIDIA NIM), then espeak-ng TTS, with a dual-reactivity Voice Orb (mic + TTS audio), hands-free endpointing, live web search, conversation memory, and silent app launch.
 
@@ -28,8 +28,9 @@ capture starts when the level clears that noise floor, and the utterance ends af
 continuous silence. Decoding is capped at two threads so the TV keeps a core free.
 
 Whisper runs in command mode against `assets/commands.gbnf`, which biases it toward TV phrases
-(`open <app>`, `launch <app>`, `search for <phrase>`). A transcript that matches an installed app
-is launched locally with no network round trip; anything else is forwarded to Qwen.
+(`open <app>`, `launch <app>`, `search for <phrase>`). A clip the grammar rejects is decoded once
+more without it, so an unusual phrase still transcribes. A transcript that matches an installed
+app is launched locally with no network round trip; anything else is forwarded to Qwen.
 
 Three files are read from the app's `assets/` directory at runtime:
 
@@ -114,7 +115,7 @@ flowchart TD
 | `renderer.rs`        | 2,688 | OpenGL ES 2, damage tracking, batch rendering, shader uniforms  |
 | `damage.rs`          | 173   | Partial redraw tracker (HISTORY=4, LOOKAHEAD=32)                |
 | `shaders/paint.frag` | ~120  | Glass, parallax, glow, orb, app icons                           |
-| `shaders/orb.frag`   | ~60   | Voice orb SDF + exponential glow                                |
+| `shaders/orb.frag`   | 73    | Voice orb sphere, iridescent seam, halo                         |
 | `wallpapers.rs`      | 627   | Upload, rotation, gradient, Ken Burns pan                       |
 | `voice.rs`           | 83    | Simulated audio envelope, `/dev/input` listener                 |
 | `damage.rs`          | 173   | Frame diff, `bounds()`, `union()`, `intersects()`               |

@@ -341,6 +341,18 @@ impl<'a, S: System> Home<'a, S> {
     pub fn boot(&self, config: &Config) -> Result<()> {
         self.apply_with(config, true, true)
     }
+
+    /// LG's voice assistant claims the remote's voice key and draws its own overlay
+    /// across the desktop, which would sit on top of Luma's orb. Booting Luma as
+    /// Home replaces it, so the units are stopped on every apply. Best effort: a
+    /// firmware without them is not an error.
+    fn silence_lg_voice(&self) {
+        for unit in ["voiceconductor.service", "voiceinput.service"] {
+            if let Err(error) = system::command(self.system, "/bin/systemctl", &["stop", unit]) {
+                eprintln!("Luma Home: could not stop {unit}: {error}");
+            }
+        }
+    }
     fn apply_with(&self, config: &Config, open: bool, keep_mount_on_failure: bool) -> Result<()> {
         if !self.exists(Path::new(&config.app_dir).join("luma")) {
             return Err("Luma is no longer installed".into());
@@ -391,6 +403,7 @@ impl<'a, S: System> Home<'a, S> {
                 self.reread(&system::json(self.system, format!("{STAGE}/appinfo.json"))?)?;
             }
             self.stop_home(&config.app_dir)?;
+            self.silence_lg_voice();
             if open || (front == self.id && self.foreground()? == self.id) {
                 if config.method == "executable" {
                     self.open_executable()?;

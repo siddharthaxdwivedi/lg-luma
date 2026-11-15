@@ -2262,9 +2262,8 @@ impl Renderer {
             }
             if let Some(orb) = self.orb {
                 // The orb is the last command: keep the frame's damage scissor so a
-                // partial redraw does not stack additive light outside it, then
-                // switch to straight additive and restore the UI blend for the
-                // next frame.
+                // partial redraw cannot paint the sphere outside it, then switch to
+                // premultiplied-over and restore the UI blend for the next frame.
                 scissor(damage);
                 gl::UseProgram(self.orb_program);
                 gl::BindBuffer(gl::ARRAY_BUFFER, self.orb_buffer);
@@ -2275,7 +2274,12 @@ impl Renderer {
                 gl::Uniform1f(self.uniforms.orb.radius, 0.16);
                 gl::Uniform1f(self.uniforms.orb.aspect, vw as f32 / vh.max(1) as f32);
                 gl::Uniform1f(self.uniforms.orb.alpha, orb.alpha);
-                gl::BlendFuncSeparate(gl::ONE, gl::ONE, gl::ZERO, gl::ONE);
+                gl::BlendFuncSeparate(
+                    gl::ONE,
+                    gl::ONE_MINUS_SRC_ALPHA,
+                    gl::ONE,
+                    gl::ONE_MINUS_SRC_ALPHA,
+                );
                 gl::DrawArrays(gl::TRIANGLE_STRIP, 0, 4);
                 gl::BlendFuncSeparate(
                     gl::SRC_ALPHA,

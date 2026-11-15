@@ -855,10 +855,11 @@ fn voice_orb(out: &mut Scene, state: &State) {
     if !state.preferences.voice_orb || state.voice_fade <= 0.001 {
         return;
     }
-    // The shader draws a full-screen quad centered on the logical screen; the
-    // rect only bounds damage and the exponential glow around the core.
+    // The shader draws a full-screen quad and places the sphere low on the
+    // screen (ORB_CENTER_Y in shaders/orb.frag); the rect only bounds damage
+    // and the halo around the sphere.
     out.draw.push(Draw::Orb(
-        Rect::new(460., 40., 1000., 1000.),
+        Rect::new(690., 530., 540., 540.),
         state.voice_level,
         state.voice_fade,
         state.voice_time,

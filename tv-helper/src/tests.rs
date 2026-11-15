@@ -195,6 +195,10 @@ impl System for Fixture {
             self.unmount(args.last().unwrap());
             return Ok(ok(json!({})));
         }
+        // The real TV ships /bin/systemctl, so stopping a unit succeeds.
+        if program == "/bin/systemctl" {
+            return Ok(ok(json!({})));
+        }
         if program != "/usr/bin/luna-send" {
             panic!("Unexpected system command: {program}");
         }
@@ -367,6 +371,17 @@ fn boot_launches_home_before_the_preload_manager_can() {
     h.boot(&f.config("executable", home::HOME)).unwrap();
     assert_eq!(f.front.borrow().as_str(), home::HOME);
     assert!(f.calls().iter().any(|s| s.contains("/launch ")));
+    // LG's voice assistant would otherwise draw its overlay over Luma's orb.
+    assert!(
+        f.calls()
+            .iter()
+            .any(|s| s == "/bin/systemctl stop voiceconductor.service")
+    );
+    assert!(
+        f.calls()
+            .iter()
+            .any(|s| s == "/bin/systemctl stop voiceinput.service")
+    );
 }
 #[test]
 fn boot_keeps_the_mount_when_home_does_not_come_to_the_front() {
