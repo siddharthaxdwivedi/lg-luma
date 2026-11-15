@@ -73,9 +73,17 @@ impl Default for SttConfig {
     }
 }
 
-/// Resolve a bundled asset next to the running executable, falling back to the
-/// installed application directory.
+/// Resolve a bundled asset from the installed package, falling back to the
+/// directory next to the executable. An executable-only Home mount puts the
+/// binary in `/usr/bin`, so the executable's own directory is not authoritative.
 fn asset_path(name: &str) -> String {
+    if let Ok(directory) = crate::platform::install_dir() {
+        return directory
+            .join("assets")
+            .join(name)
+            .to_string_lossy()
+            .into_owned();
+    }
     if let Ok(exe) = std::env::current_exe()
         && let Some(dir) = exe.parent()
     {
