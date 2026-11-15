@@ -231,6 +231,7 @@ jobs:
         with:
           path: |
             .build/vosk/lib
+            .build/vosk/include
             .build/vosk/src/kaldi/src/*/*.a
           key: vosk-webos-${{ hashFiles('tools/build-vosk.sh') }}-v1
       - name: Build Vosk for ARM using the webOS SDK cross-compiler

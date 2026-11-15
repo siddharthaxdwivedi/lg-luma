@@ -58,7 +58,7 @@ JOBS=${JOBS:-4}
 
 BUILD="$ROOT/.build/vosk"
 SRC="$BUILD/src"
-PREFIX="$BUILD/lib"
+PREFIX="$BUILD"
 mkdir -p "$SRC" "$PREFIX" "$BUILD/obj"
 
 # Pinned upstream revisions: exact commits and tags, never branch tips.
