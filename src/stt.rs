@@ -166,15 +166,7 @@ fn stt_thread(
         eprintln!("Luma STT: Silero VAD unavailable, decoding every clip");
     }
 
-    let mut audio_source = match AudioSource::open(config.sample_rate) {
-        Ok(source) => source,
-        Err(error) => {
-            let _ = evt_tx.send(SttEvent::Error(format!(
-                "audio source open failed: {error}"
-            )));
-            return;
-        }
-    };
+    let mut audio_source: Option<AudioSource> = None;
 
     let chunk_ms = (config.chunk_frames as f32 / config.sample_rate * 1000.0).max(1.0);
     let mut gate = Gate::new(chunk_ms);
@@ -187,6 +179,17 @@ fn stt_thread(
             match command {
                 SttCommand::StartListening => {
                     if !listening {
+                        if audio_source.is_none() {
+                            match AudioSource::open(config.sample_rate) {
+                                Ok(source) => audio_source = Some(source),
+                                Err(error) => {
+                                    let _ = evt_tx.send(SttEvent::Error(format!(
+                                        "audio source open failed: {error}"
+                                    )));
+                                    continue;
+                                }
+                            }
+                        }
                         listening = true;
                         is_listening.store(true, Ordering::Relaxed);
                         samples.clear();
@@ -221,11 +224,22 @@ fn stt_thread(
             continue;
         }
 
-        let frames = match audio_source.read_chunk(&mut buffer) {
+        let read = match audio_source.as_mut() {
+            Some(source) => source.read_chunk(&mut buffer),
+            None => {
+                thread::sleep(Duration::from_millis(10));
+                continue;
+            }
+        };
+        let frames = match read {
             Ok(frames) => frames,
             Err(error) => {
                 let _ = evt_tx.send(SttEvent::Error(format!("audio read error: {error}")));
-                thread::sleep(Duration::from_millis(50));
+                audio_source = None;
+                listening = false;
+                is_listening.store(false, Ordering::Relaxed);
+                rms.store(0, Ordering::Relaxed);
+                gate.reset();
                 continue;
             }
         };
@@ -301,6 +315,34 @@ fn finish(engine: &mut Engine, samples: &[i16], evt_tx: &Sender<SttEvent>) {
     }
 }
 
+#[cfg(target_os = "linux")]
+fn open_capture(device: &str, rate: u32) -> Result<alsa::pcm::PCM, String> {
+    use alsa::{
+        Direction,
+        pcm::{Access, Format, HwParams, PCM},
+    };
+    let pcm = PCM::new(device, Direction::Capture, false)
+        .map_err(|e| format!("ALSA open failed: {e}"))?;
+    let hwp = HwParams::any(&pcm).map_err(|e| format!("HwParams any failed: {e}"))?;
+    hwp.set_access(Access::RWInterleaved)
+        .map_err(|e| format!("set_access failed: {e}"))?;
+    hwp.set_format(Format::s16())
+        .map_err(|e| format!("set_format failed: {e}"))?;
+    hwp.set_channels(1)
+        .map_err(|e| format!("set_channels failed: {e}"))?;
+    let actual = hwp
+        .set_rate_near(rate, alsa::ValueOr::Nearest)
+        .map_err(|e| format!("set_rate failed: {e}"))?;
+    if actual != rate {
+        return Err(format!("device only supports {actual} Hz, need {rate} Hz"));
+    }
+    pcm.hw_params(&hwp)
+        .map_err(|e| format!("hw_params failed: {e}"))?;
+    pcm.prepare().map_err(|e| format!("prepare failed: {e}"))?;
+    pcm.start().map_err(|e| format!("start failed: {e}"))?;
+    Ok(pcm)
+}
+
 enum AudioSource {
     VoiceInput(std::os::unix::net::UnixStream),
     Alsa(alsa::pcm::PCM),
@@ -316,28 +358,34 @@ impl AudioSource {
 
         #[cfg(target_os = "linux")]
         {
-            use alsa::{
-                Direction, ValueOr,
-                pcm::{Access, Format, HwParams, PCM},
-            };
-            let pcm = PCM::new("default", Direction::Capture, false)
-                .map_err(|e| format!("ALSA open failed: {e}"))?;
-            let hwp = HwParams::any(&pcm).map_err(|e| format!("HwParams any failed: {e}"))?;
-            hwp.set_access(Access::RWInterleaved)
-                .map_err(|e| format!("set_access failed: {e}"))?;
-            hwp.set_format(Format::s16())
-                .map_err(|e| format!("set_format failed: {e}"))?;
-            hwp.set_channels(1)
-                .map_err(|e| format!("set_channels failed: {e}"))?;
             let rate = sample_rate as u32;
-            hwp.set_rate_near(rate, ValueOr::Nearest)
-                .map_err(|e| format!("set_rate failed: {e}"))?;
-            pcm.hw_params(&hwp)
-                .map_err(|e| format!("hw_params failed: {e}"))?;
-            pcm.prepare().map_err(|e| format!("prepare failed: {e}"))?;
-            pcm.start().map_err(|e| format!("start failed: {e}"))?;
-            drop(hwp);
-            Ok(Self::Alsa(pcm))
+            let mut candidates: Vec<String> = Vec::new();
+            if let Ok(device) = std::env::var("LUMA_MIC_DEVICE")
+                && !device.trim().is_empty()
+            {
+                candidates.push(device.trim().to_string());
+            }
+            // The TV's built-in array is a dummy DAI owned by LG's DSP, so prefer
+            // a real USB capture card whenever one is plugged in.
+            for card in alsa::card::Iter::new().flatten() {
+                let name = card.get_name().unwrap_or_default();
+                let long = card.get_longname().unwrap_or_default();
+                let is_usb = name.to_ascii_lowercase().contains("usb")
+                    || long.to_ascii_lowercase().contains("usb");
+                if is_usb {
+                    candidates.push(format!("plughw:{},0", card.get_index()));
+                }
+            }
+            candidates.push("default".to_string());
+
+            let mut last_error = String::from("no capture device found");
+            for device in candidates {
+                match open_capture(&device, rate) {
+                    Ok(pcm) => return Ok(Self::Alsa(pcm)),
+                    Err(error) => last_error = format!("{device}: {error}"),
+                }
+            }
+            Err(last_error)
         }
 
         #[cfg(not(target_os = "linux"))]
