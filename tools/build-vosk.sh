@@ -18,13 +18,21 @@ set -eu
 ROOT=$(dirname "$(dirname "$(realpath "$0")")")
 : "${WEBOS_NDK:?Set WEBOS_NDK to the extracted webOS native toolchain}"
 WEBOS_NDK=$(realpath "$WEBOS_NDK")
-# Autotools (OpenFst, Kaldi) look the cross toolchain up by name on PATH, and a
-# relocatable SDK does not put it there itself, so add it. Capture the host C
-# compiler first: OpenBLAS builds and runs a host helper with HOSTCC, which the
-# SDK directory must never shadow.
+# Capture the host C compiler before touching PATH: OpenBLAS builds and runs a
+# host helper with HOSTCC, which nothing on PATH may shadow.
 HOST_CC=$(command -v gcc || command -v cc)
 [ -n "$HOST_CC" ] || { printf '%s\n' "No host C compiler for OpenBLAS" >&2; exit 1; }
-PATH="$WEBOS_NDK/bin:$PATH"
+# Autotools (OpenFst, Kaldi) look the cross toolchain up by name on PATH, and a
+# relocatable SDK does not put it there itself. Expose only the prefixed cross
+# tools: the SDK bin directory also ships buildroot host tools, and its own perl
+# cannot run outside its build tree, which breaks OpenBLAS's gensymbol script.
+TOOLS="$ROOT/.build/vosk/toolchain-bin"
+rm -rf "$TOOLS"
+mkdir -p "$TOOLS"
+for tool in "$WEBOS_NDK"/bin/arm-webos-linux-gnueabi-*; do
+  ln -sf "$tool" "$TOOLS/"
+done
+PATH="$TOOLS:$PATH"
 export PATH
 BIN_PREFIX="$WEBOS_NDK/bin/arm-webos-linux-gnueabi-"
 CC="${BIN_PREFIX}gcc"
