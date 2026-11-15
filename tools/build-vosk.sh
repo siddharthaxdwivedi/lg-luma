@@ -140,19 +140,28 @@ if [ ! -f "$SRC/kaldi/src/online2/kaldi-online2.a" ]; then
   if [ ! -f "$SYSROOT/usr/include/execinfo.h" ]; then
     sed -i 's/-DHAVE_EXECINFO_H=1//' "$MK"
   fi
+  # configure refuses --mathlib=OPENBLAS_CLAPACK together with --openblas-root:
+  # its conflict check only understands single-library roots. The combination is
+  # the one that links OpenBLAS's cblas against CLAPACK's LAPACK and f2c, so
+  # leave the root unset and point the directory it defaults to at our prefix.
+  mkdir -p "$SRC/kaldi/tools/OpenBLAS"
+  ln -sfn "$PREFIX" "$SRC/kaldi/tools/OpenBLAS/install"
   (
     cd "$SRC/kaldi/src"
-    # --static omits -fPIC; the Rust ARM target links PIE, so force it.
     CXX="$CXX" AR="$AR" RANLIB="$RANLIB" \
     CXXFLAGS="$ARCH_FLAGS $SYS_FLAG -fPIC -DFST_NO_DYNAMIC_LINKING" \
       ./configure --static --use-cuda=no \
         --mathlib=OPENBLAS_CLAPACK \
         --host=arm-webos-linux-gnueabi \
-        --openblas-root="$PREFIX" \
         --fst-root="$PREFIX" \
         --fst-version=1.8.0
-    make -j"$JOBS" depend
-    make -j"$JOBS" online2 rnnlm
+    # The platform makefile assigns CXXFLAGS with =, which discards the
+    # environment, so -fPIC (the Rust target links PIE), the sysroot and a
+    # concrete -march only reach the compiler through the variable that
+    # assignment expands.
+    FLAGS="$SYS_FLAG -fPIC -march=armv7-a"
+    make -j"$JOBS" depend EXTRA_CXXFLAGS="$FLAGS"
+    make -j"$JOBS" online2 rnnlm EXTRA_CXXFLAGS="$FLAGS"
   )
 fi
 
