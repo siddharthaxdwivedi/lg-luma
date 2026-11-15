@@ -1,8 +1,8 @@
-//! Cloud Brain — NVIDIA NIM Qwen integration with Search & Conversation Memory.
+//! Cloud Brain — Groq integration with Search & Conversation Memory.
 //!
-//! Sends the user's transcript to the NVIDIA NIM API (model: qwen/qwen3.8-27b)
+//! Sends the user's transcript to Groq's OpenAI-compatible API (model: llama-3.3-70b-versatile)
 //! with conversation history and installed app context. Supports three actions:
-//! SPEAK, LAUNCH, SEARCH. SEARCH triggers a web search + second Qwen call.
+//! SPEAK, LAUNCH, SEARCH. SEARCH triggers a web search + second model call.
 
 #[cfg(feature = "voice-assistant")]
 use reqwest::Client;
@@ -13,15 +13,15 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 #[cfg(feature = "voice-assistant")]
 use tokio::sync::Mutex;
 
-const NIM_ENDPOINT: &str = "https://integrate.api.nvidia.com/v1/chat/completions";
-const NIM_MODEL: &str = "qwen/qwen3.8-27b";
+const GROQ_ENDPOINT: &str = "https://api.groq.com/openai/v1/chat/completions";
+const GROQ_MODEL: &str = "llama-3.3-70b-versatile";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(5);
 const CONVERSATION_TTL: Duration = Duration::from_secs(60);
 const MAX_HISTORY_MESSAGES: usize = 10;
 
 /// The API key file path (never log or expose its contents).
-const NIM_KEY_PATH: &str = "/var/lib/luma-home/.nim_key";
+const GROQ_KEY_PATH: &str = "/var/lib/luma-home/.groq_key";
 
 /// DuckDuckGo HTML endpoint for web search.
 const DDG_HTML_URL: &str = "https://html.duckduckgo.com/html/";
@@ -35,7 +35,7 @@ pub struct ConversationMessage {
     pub timestamp_ms: u64,
 }
 
-/// The parsed action from Qwen.
+/// The parsed action from the cloud model.
 #[derive(Debug, Clone, PartialEq)]
 pub enum VoiceAction {
     Speak(String),
@@ -59,32 +59,32 @@ pub enum CloudError {
 }
 
 #[derive(Serialize)]
-struct NimRequest {
+struct ChatRequest {
     model: String,
-    messages: Vec<NimMessage>,
+    messages: Vec<ChatMessage>,
     max_tokens: u32,
     temperature: f32,
     stream: bool,
 }
 
 #[derive(Serialize, Deserialize, Clone)]
-pub struct NimMessage {
+pub struct ChatMessage {
     role: String,
     content: String,
 }
 
 #[derive(Deserialize)]
-struct NimResponse {
-    choices: Vec<NimChoice>,
+struct ChatResponse {
+    choices: Vec<ChatChoice>,
 }
 
 #[derive(Deserialize)]
-struct NimChoice {
-    message: NimResponseMessage,
+struct ChatChoice {
+    message: ChatResponseMessage,
 }
 
 #[derive(Deserialize)]
-struct NimResponseMessage {
+struct ChatResponseMessage {
     content: String,
 }
 
@@ -121,11 +121,11 @@ impl ConversationState {
         Self::trim_history(&mut history);
     }
 
-    pub async fn get_messages(&self) -> Vec<NimMessage> {
+    pub async fn get_messages(&self) -> Vec<ChatMessage> {
         let history = self.history.lock().await;
         history
             .iter()
-            .map(|m| NimMessage {
+            .map(|m| ChatMessage {
                 role: m.role.clone(),
                 content: m.content.clone(),
             })
@@ -150,8 +150,8 @@ impl ConversationState {
     }
 }
 
-/// Query the NVIDIA NIM Qwen model with transcript, app list, and conversation history.
-pub async fn query_qwen(
+/// Query the cloud model with transcript, app list, and conversation history.
+pub async fn query_model(
     transcript: String,
     app_list: Vec<(String, String)>,
     conversation: &ConversationState,
@@ -159,13 +159,13 @@ pub async fn query_qwen(
     conversation.maybe_clear_expired().await;
     conversation.add_user(transcript.clone()).await;
 
-    let api_key = std::fs::read_to_string(NIM_KEY_PATH)
-        .map_err(|_| CloudError::KeyMissing(NIM_KEY_PATH.to_string()))?
+    let api_key = std::fs::read_to_string(GROQ_KEY_PATH)
+        .map_err(|_| CloudError::KeyMissing(GROQ_KEY_PATH.to_string()))?
         .trim()
         .to_string();
 
     if api_key.is_empty() {
-        return Err(CloudError::KeyMissing(NIM_KEY_PATH.to_string()));
+        return Err(CloudError::KeyMissing(GROQ_KEY_PATH.to_string()));
     }
 
     let _client = Client::builder()
@@ -195,10 +195,10 @@ Here is the list of installed apps on the TV: {}"#,
 
     let history = conversation.get_messages().await;
 
-    let request = NimRequest {
-        model: NIM_MODEL.to_string(),
+    let request = ChatRequest {
+        model: GROQ_MODEL.to_string(),
         messages: {
-            let mut msgs = vec![NimMessage {
+            let mut msgs = vec![ChatMessage {
                 role: "system".to_string(),
                 content: system_prompt,
             }];
@@ -214,7 +214,7 @@ Here is the list of installed apps on the TV: {}"#,
         .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|e| CloudError::Network(e.to_string()))?
-        .post(NIM_ENDPOINT)
+        .post(GROQ_ENDPOINT)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .json(&request)
@@ -228,12 +228,12 @@ Here is the list of installed apps on the TV: {}"#,
         return Err(CloudError::Api(format!("HTTP {}: {}", status, body)));
     }
 
-    let nim_resp: NimResponse = response
+    let chat_resp: ChatResponse = response
         .json()
         .await
         .map_err(|e| CloudError::Parse(e.to_string()))?;
 
-    let content = nim_resp
+    let content = chat_resp
         .choices
         .first()
         .map(|c| c.message.content.trim())
@@ -300,19 +300,19 @@ fn extract_snippets(html: &str) -> Vec<String> {
     snippets
 }
 
-/// Second Qwen call: summarize search results into a SPEAK action.
+/// Second model call: summarize search results into a SPEAK action.
 pub async fn summarize_search(
     original_query: &str,
     snippets: Vec<String>,
     conversation: &ConversationState,
 ) -> Result<VoiceAction, CloudError> {
-    let api_key = std::fs::read_to_string(NIM_KEY_PATH)
-        .map_err(|_| CloudError::KeyMissing(NIM_KEY_PATH.to_string()))?
+    let api_key = std::fs::read_to_string(GROQ_KEY_PATH)
+        .map_err(|_| CloudError::KeyMissing(GROQ_KEY_PATH.to_string()))?
         .trim()
         .to_string();
 
     if api_key.is_empty() {
-        return Err(CloudError::KeyMissing(NIM_KEY_PATH.to_string()));
+        return Err(CloudError::KeyMissing(GROQ_KEY_PATH.to_string()));
     }
 
     let _client = Client::builder()
@@ -338,15 +338,15 @@ Do not include any other text, reasoning, or markdown."#;
 
     let history = conversation.get_messages().await;
 
-    let request = NimRequest {
-        model: NIM_MODEL.to_string(),
+    let request = ChatRequest {
+        model: GROQ_MODEL.to_string(),
         messages: {
             let mut msgs = vec![
-                NimMessage {
+                ChatMessage {
                     role: "system".to_string(),
                     content: system_prompt.to_string(),
                 },
-                NimMessage {
+                ChatMessage {
                     role: "user".to_string(),
                     content: user_prompt,
                 },
@@ -363,7 +363,7 @@ Do not include any other text, reasoning, or markdown."#;
         .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|e| CloudError::Network(e.to_string()))?
-        .post(NIM_ENDPOINT)
+        .post(GROQ_ENDPOINT)
         .header("Authorization", format!("Bearer {}", api_key))
         .header("Content-Type", "application/json")
         .json(&request)
@@ -377,12 +377,12 @@ Do not include any other text, reasoning, or markdown."#;
         return Err(CloudError::Api(format!("HTTP {}: {}", status, body)));
     }
 
-    let nim_resp: NimResponse = response
+    let chat_resp: ChatResponse = response
         .json()
         .await
         .map_err(|e| CloudError::Parse(e.to_string()))?;
 
-    let content = nim_resp
+    let content = chat_resp
         .choices
         .first()
         .map(|c| c.message.content.trim())

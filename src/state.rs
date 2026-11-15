@@ -318,7 +318,7 @@ pub struct State {
     pub splash_done: bool,
     /// Voice Assistant: current UI status text (e.g., "Searching...", "Opening YouTube...")
     pub voice_assistant_text: Option<String>,
-    /// Voice Assistant: conversation history for Qwen.
+    /// Voice Assistant: conversation history for the cloud model.
     pub voice_conversation: crate::cloud_agent::ConversationState,
     /// Voice Assistant: smoothed TTS RMS level (0..1) for dual-reactivity orb pulse.
     pub tts_rms: f32,

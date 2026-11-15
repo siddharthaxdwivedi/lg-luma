@@ -1133,7 +1133,7 @@ fn run() -> Result<(), String> {
                             state.voice_assistant_text = None;
                             state.dirty = true;
                         } else {
-                            // Build app list from inventory for command matching and Qwen.
+                            // Build app list from inventory for command matching and the cloud model.
                             let app_list: Vec<(String, String)> = state
                                 .inventory
                                 .apps
@@ -1162,7 +1162,7 @@ fn run() -> Result<(), String> {
                             tokio::spawn(async move {
                                 let action = match local {
                                     Some(action) => action,
-                                    None => match cloud_agent::query_qwen(
+                                    None => match cloud_agent::query_model(
                                         transcript,
                                         app_list.clone(),
                                         &conversation,

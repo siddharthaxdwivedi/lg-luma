@@ -1,4 +1,4 @@
-﻿# Luma Custom (SiddyOS)
+# Luma Custom (SiddyOS)
 
 A highly optimized, deeply modified fork of Luma for the LG C1 (webOS 6).
 
@@ -8,17 +8,17 @@ A highly optimized, deeply modified fork of Luma for the LG C1 (webOS 6).
 - **Parallax Wallpapers:** 4K backgrounds shift based on app focus.
 - **Reactive Voice Orb:** Dark polished sphere with a drifting iridescent seam, low on the screen, reacting to live microphone and TTS levels (with a simulated envelope as a fallback).
 - **Glass UI:** Fixed straight-alpha blending and 25% milky glass tiles.
-- **Siri-Style Voice Assistant:** On-device Vosk STT, then local TV commands, then Qwen (NVIDIA NIM), then espeak-ng TTS, with a dual-reactivity Voice Orb (mic + TTS audio), self-endpointing capture, live web search, conversation memory, and silent app launch.
+- **Siri-Style Voice Assistant:** On-device Vosk STT, then local TV commands, then Groq (llama-3.3-70b-versatile), then espeak-ng TTS, with a dual-reactivity Voice Orb (mic + TTS audio), self-endpointing capture, live web search, conversation memory, and silent app launch.
 
 ## Voice Assistant Setup
 
-The Voice Assistant uses NVIDIA NIM's Qwen model. To enable it, install your API key on the TV:
+The Voice Assistant uses Groq's llama-3.3-70b-versatile model. To enable it, install your API key on the TV:
 
 ```bash
-ssh -i pwnLG/pwn_ed25519 root@192.168.1.126 "echo 'YOUR_KEY' > /var/lib/luma-home/.nim_key && chmod 600 /var/lib/luma-home/.nim_key"
+ssh -i pwnLG/pwn_ed25519 root@192.168.1.126 "echo 'YOUR_KEY' > /var/lib/luma-home/.groq_key && chmod 600 /var/lib/luma-home/.groq_key"
 ```
 
-The key is read at runtime from `/var/lib/luma-home/.nim_key` and is never logged or exposed.
+The key is read at runtime from `/var/lib/luma-home/.groq_key` and is never logged or exposed.
 
 ### On-device speech recognition
 
@@ -30,7 +30,7 @@ quiet. One utterance is capped at 30 seconds so a noisy room cannot grow the dec
 Transcription is unconstrained, so a question is heard as a question instead of being forced into
 a command. A transcript that starts with a command verb (`open <app>`, `launch <app>`,
 `search for <phrase>`) is resolved locally with no network round trip; anything else is forwarded
-to Qwen to answer.
+to the cloud model to answer.
 
 One model directory is read from the app's `assets/` directory at runtime:
 
