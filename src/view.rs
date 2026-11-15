@@ -859,7 +859,7 @@ fn voice_orb(out: &mut Scene, state: &State) {
     // screen (ORB_CENTER_Y in shaders/orb.frag); the rect only bounds damage
     // and the halo around the sphere.
     out.draw.push(Draw::Orb(
-        Rect::new(690., 530., 540., 540.),
+        Rect::new(540., 380., 840., 700.),
         state.voice_level,
         state.voice_fade,
         state.voice_time,

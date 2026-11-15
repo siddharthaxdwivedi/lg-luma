@@ -85,7 +85,7 @@ pub enum Draw {
     Glow(Rect, f32, f32, Color),
     /// Reactive voice orb. `rect` bounds its glow for damage, the second value is the
     /// smoothed 0..1 audio level, the third the 0..1 fade, and the fourth its time in
-    /// seconds. Drawn last with additive blending, over every other command.
+    /// seconds. Drawn last with premultiplied-over blending, over every other command.
     Orb(Rect, f32, f32, f32),
     Text(String, Rect, TextStyle, Color, bool),
     Image(String, Rect, f32, bool, [f32; 2]),
