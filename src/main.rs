@@ -908,7 +908,9 @@ fn run() -> Result<(), String> {
 
     // Voice Assistant: share STT RMS with the Voice Orb for mic reactivity.
     #[cfg(feature = "voice-assistant")]
-    let _stt_rms = stt_handle.as_ref().map(|h| h.rms.clone());
+    if let Some(handle) = stt_handle.as_ref() {
+        state.stt_rms_atomic = handle.rms.clone();
+    }
 
     // Voice Assistant: channel for async tasks to send TTS commands to the main thread.
     let (tts_cmd_tx, tts_cmd_rx) = crossbeam_channel::bounded(8);

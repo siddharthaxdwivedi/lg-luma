@@ -298,8 +298,8 @@ pub struct State {
     pub voice_active: bool,
     /// 0..1 fade for the voice orb, advanced by the frame loop over ~0.2 s.
     pub voice_fade: f32,
-    /// Smoothed 0..1 level driving the orb's pulse. Simulated until the TV's
-    /// real capture path is verified.
+    /// Smoothed 0..1 level driving the orb's pulse, taken from the live STT
+    /// mic RMS and TTS RMS (or the synthetic envelope during the preview).
     pub voice_level: f32,
     /// Seconds since the orb became active, used for its idle pulse.
     pub voice_time: f32,
@@ -324,6 +324,8 @@ pub struct State {
     pub tts_rms: f32,
     /// Voice Assistant: shared atomic TTS RMS for background TTS thread to write to.
     pub tts_rms_atomic: std::sync::Arc<std::sync::atomic::AtomicI32>,
+    /// Voice Assistant: shared atomic STT mic RMS for the capture thread to write to.
+    pub stt_rms_atomic: std::sync::Arc<std::sync::atomic::AtomicI32>,
 }
 
 impl State {
@@ -390,6 +392,7 @@ impl State {
             voice_conversation: crate::cloud_agent::ConversationState::new(),
             tts_rms: 0.0,
             tts_rms_atomic: std::sync::Arc::new(std::sync::atomic::AtomicI32::new(0)),
+            stt_rms_atomic: std::sync::Arc::new(std::sync::atomic::AtomicI32::new(0)),
         }
     }
 
@@ -606,11 +609,18 @@ impl State {
         }
         if self.voice_fade > 0. {
             self.voice_time += dt;
-            // REAL AUDIO PLUG POINT: `real_voice_level` returns the RMS of the
-            // webOS `voiceinput` socket PCM once that capture is verified.
-            // Voice Assistant: take the max of STT mic level and TTS level for dual-reactivity.
-            let stt_level =
-                real_voice_level().unwrap_or_else(|| simulated_voice_level(self.voice_time));
+            // Voice Assistant: take the max of the STT mic level and the TTS level
+            // for dual-reactivity. The settings-row preview has no capture thread,
+            // so it keeps the synthetic envelope; a real capture reads the mic RMS
+            // that the STT thread publishes.
+            let stt_level = if self.voice_preview.is_some() {
+                simulated_voice_level(self.voice_time)
+            } else {
+                f32::from_bits(
+                    self.stt_rms_atomic
+                        .load(std::sync::atomic::Ordering::Relaxed) as u32,
+                )
+            };
             let tts_level = f32::from_bits(
                 self.tts_rms_atomic
                     .load(std::sync::atomic::Ordering::Relaxed) as u32,
@@ -2871,12 +2881,4 @@ fn simulated_voice_level(time: f32) -> f32 {
     let wave = (time * 6.4).sin() * 0.5 + 0.5;
     let grain = (time * 23.7 + (time * 3.1).sin()).sin() * 0.5 + 0.5;
     (0.18 + wave * 0.52 + grain * 0.3).min(1.)
-}
-
-/// REAL AUDIO PLUG POINT. The remote mic's PCM is only reachable through
-/// `com.webos.service.voiceinput` (`/tmp/voiceinput_remote1.soc`) on this TV.
-/// Once that capture is verified, compute its RMS here (16-bit little-endian,
-/// mono) and return `Some(level)`; `None` keeps the simulated level.
-fn real_voice_level() -> Option<f32> {
-    None
 }
