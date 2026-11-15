@@ -115,10 +115,12 @@ or collected icon maps in the repository. Names and marks remain the property of
 app owners. Luma's folded-light L logo is original artwork; its SVG geometry produces the
 small/large webOS installation icons.
 
-Speech recognition: [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (MIT) with the OpenAI
-Whisper `base.en` weights (MIT), and Silero VAD (MIT) via
-[ggml-org/whisper-vad](https://huggingface.co/ggml-org/whisper-vad). Models are downloaded at
-packaging time, not stored here.
+Speech recognition: [Vosk](https://alphacephei.com/vosk/) (Apache-2.0), with
+[Kaldi](https://github.com/kaldi-asr/kaldi) (Apache-2.0),
+[OpenFst](https://www.openfst.org/) (Apache-2.0), [OpenBLAS](https://www.openblas.net/)
+(BSD-3-Clause) and [CLAPACK](https://github.com/alphacep/clapack) (BSD-3-Clause) linked statically
+into the binary, plus the Vosk `vosk-model-small-en-us-0.15` English model (Apache-2.0). The model
+is downloaded and unpacked at packaging time, not stored here.
 
 Weather data: [Open-Meteo](https://open-meteo.com/), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 

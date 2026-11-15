@@ -204,26 +204,21 @@ jobs:
           name: smoke-inputs
       - name: Restore generated native assets
         run: tar -xzf smoke-inputs.tar.gz .build/assets
-      - name: Cache Whisper models
+      - name: Cache the Vosk STT model
         uses: actions/cache@v4
         with:
-          path: |
-            .build/assets/ggml-base.en.bin
-            .build/assets/ggml-silero-v5.1.2.bin
-          key: whisper-models-base-en-silero-5.1.2-v1
-      - name: Download Whisper STT assets
+          path: .build/assets/vosk-model-small-en-us-0.15
+          key: vosk-model-small-en-us-0.15-v1
+      - name: Download the Vosk STT model
         run: |
           mkdir -p .build/assets
-          if [ ! -s .build/assets/ggml-base.en.bin ]; then
-            curl --fail --location --retry 3 --output .build/assets/ggml-base.en.bin \
-              https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+          if [ ! -s .build/assets/vosk-model-small-en-us-0.15/am/final.mdl ]; then
+            curl --fail --location --retry 3 --output /tmp/vosk-model-small-en-us-0.15.zip \
+              https://alphacephei.com/vosk/models/vosk-model-small-en-us-0.15.zip
+            echo "30f26242c4eb449f948e42cb302dd7a686cb29a3423a8367f99ff41780942498  /tmp/vosk-model-small-en-us-0.15.zip" | sha256sum --check --strict
+            unzip -q -o /tmp/vosk-model-small-en-us-0.15.zip -d .build/assets
           fi
-          test -s .build/assets/ggml-base.en.bin
-          if [ ! -s .build/assets/ggml-silero-v5.1.2.bin ]; then
-            curl --fail --location --retry 3 --output .build/assets/ggml-silero-v5.1.2.bin \
-              https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
-          fi
-          test -s .build/assets/ggml-silero-v5.1.2.bin
+          test -s .build/assets/vosk-model-small-en-us-0.15/am/final.mdl
       - name: Cache webOS SDK
         uses: actions/cache@v4
         with:

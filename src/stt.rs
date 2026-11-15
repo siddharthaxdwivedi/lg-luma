@@ -1,19 +1,24 @@
-//! Local Speech-to-Text using whisper.cpp.
+//! Local Speech-to-Text using Vosk.
 //!
-//! A dedicated thread owns the microphone. Opening the orb lets the capture
-//! device settle, samples the room noise, starts capture only when the level
-//! clears that floor, and ends the utterance after 1.5 s of silence (see
-//! `gate.rs`). The clip is then trimmed by Silero VAD and transcribed on two
-//! threads, so the TV never runs Whisper on silence and never saturates all
-//! four cores.
+//! A dedicated thread owns the microphone. Opening the orb opens the capture
+//! device and streams it straight into a Vosk recognizer: Vosk endpoints on its
+//! own, so the utterance ends a moment after the user stops talking and nothing
+//! is decoded while the room is quiet. The transcript is matched against local
+//! commands afterwards, and anything that is not a command goes to the cloud
+//! assistant.
 
 mod commands;
+#[cfg(feature = "stt-whisper")]
+#[allow(dead_code)]
 mod engine;
-mod gate;
+#[cfg(target_arch = "arm")]
+mod vosk;
+#[cfg(not(target_arch = "arm"))]
+#[path = "stt/vosk_stub.rs"]
+mod vosk;
 
 pub use commands::resolve;
-use engine::Engine;
-use gate::{Gate, GateEvent};
+use vosk::{Recognizer, VoskEngine};
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -31,28 +36,23 @@ pub enum SttCommand {
 /// Events published by the STT thread.
 #[derive(Debug, Clone)]
 pub enum SttEvent {
-    /// Speech was detected and is being captured.
+    /// The orb opened and the microphone is streaming into the recognizer.
     Listening,
-    /// Capture finished; the clip is being decoded.
+    /// Endpointing decided the user stopped talking; the transcript is read.
     Processing,
-    /// Final transcript. Empty means the clip held no speech.
+    /// Final transcript. Empty means the utterance held no speech.
     Final(String),
     Error(String),
 }
 
-/// Upper bound on retained audio per utterance (~30 s at 16 kHz).
-const MAX_SAMPLES: usize = 16_000 * 30;
-
-/// Sampling rate whisper.cpp and Silero VAD expect.
+/// Rate the microphone is captured at, and what Vosk is told to expect.
 const SAMPLE_RATE: f32 = 16_000.0;
 
 pub struct SttConfig {
-    pub model_path: String,
-    pub vad_model_path: String,
+    /// Directory holding the unpacked Vosk model.
+    pub model_dir: String,
     pub sample_rate: f32,
     pub chunk_frames: usize,
-    /// Decoding threads. Capped at 2 so the TV keeps a core free.
-    pub n_threads: i32,
     /// Set while TTS is speaking; capture pauses so the TV cannot hear itself.
     pub tts_speaking: Option<Arc<AtomicBool>>,
 }
@@ -60,11 +60,9 @@ pub struct SttConfig {
 impl Default for SttConfig {
     fn default() -> Self {
         Self {
-            model_path: asset_path("ggml-base.en.bin"),
-            vad_model_path: asset_path("ggml-silero-v5.1.2.bin"),
+            model_dir: asset_path("vosk-model-small-en-us-0.15"),
             sample_rate: SAMPLE_RATE,
             chunk_frames: 1600,
-            n_threads: 2,
             tts_speaking: None,
         }
     }
@@ -124,7 +122,7 @@ impl SttHandle {
         })
     }
 
-    /// Open the orb: calibrate the room, then capture one utterance.
+    /// Open the orb: start streaming the microphone into a fresh recognizer.
     pub fn start(&self) {
         let _ = self.cmd_tx.send(SttCommand::StartListening);
     }
@@ -146,26 +144,16 @@ fn stt_thread(
     rms: Arc<AtomicI32>,
     is_listening: Arc<AtomicBool>,
 ) {
-    let mut engine = match Engine::load(
-        &config.model_path,
-        Some(&config.vad_model_path),
-        config.n_threads,
-    ) {
+    let engine = match VoskEngine::load(&config.model_dir) {
         Ok(engine) => engine,
         Err(error) => {
             let _ = evt_tx.send(SttEvent::Error(error));
             return;
         }
     };
-    if !engine.has_vad() {
-        eprintln!("Luma STT: Silero VAD unavailable, decoding every clip");
-    }
 
     let mut audio_source: Option<AudioSource> = None;
-
-    let chunk_ms = (config.chunk_frames as f32 / config.sample_rate * 1000.0).max(1.0);
-    let mut gate = Gate::new(chunk_ms);
-    let mut samples: Vec<i16> = Vec::new();
+    let mut recognizer: Option<Recognizer> = None;
     let mut buffer = vec![0i16; config.chunk_frames];
     let mut listening = false;
 
@@ -173,32 +161,35 @@ fn stt_thread(
         while let Ok(command) = cmd_rx.try_recv() {
             match command {
                 SttCommand::StartListening => {
-                    if !listening {
-                        if audio_source.is_none() {
-                            match AudioSource::open(config.sample_rate) {
-                                Ok(source) => audio_source = Some(source),
-                                Err(error) => {
-                                    let _ = evt_tx.send(SttEvent::Error(format!(
-                                        "audio source open failed: {error}"
-                                    )));
-                                    continue;
-                                }
+                    if listening {
+                        continue;
+                    }
+                    if audio_source.is_none() {
+                        match AudioSource::open(config.sample_rate) {
+                            Ok(source) => audio_source = Some(source),
+                            Err(error) => {
+                                let _ = evt_tx.send(SttEvent::Error(format!(
+                                    "audio source open failed: {error}"
+                                )));
+                                continue;
                             }
                         }
-                        listening = true;
-                        is_listening.store(true, Ordering::Relaxed);
-                        samples.clear();
-                        gate.reset();
                     }
+                    match engine.recognizer(config.sample_rate) {
+                        Ok(reader) => recognizer = Some(reader),
+                        Err(error) => {
+                            let _ = evt_tx.send(SttEvent::Error(error));
+                            continue;
+                        }
+                    }
+                    listening = true;
+                    is_listening.store(true, Ordering::Relaxed);
+                    let _ = evt_tx.send(SttEvent::Listening);
                 }
                 SttCommand::StopListening => {
                     if listening {
-                        listening = false;
-                        is_listening.store(false, Ordering::Relaxed);
-                        rms.store(0, Ordering::Relaxed);
-                        gate.reset();
-                        finish(&mut engine, &samples, &evt_tx);
-                        samples.clear();
+                        stop_listening(&mut listening, &is_listening, &rms);
+                        finish(&mut recognizer, &evt_tx);
                     }
                 }
             }
@@ -231,10 +222,8 @@ fn stt_thread(
             Err(error) => {
                 let _ = evt_tx.send(SttEvent::Error(format!("audio read error: {error}")));
                 audio_source = None;
-                listening = false;
-                is_listening.store(false, Ordering::Relaxed);
-                rms.store(0, Ordering::Relaxed);
-                gate.reset();
+                recognizer = None;
+                stop_listening(&mut listening, &is_listening, &rms);
                 continue;
             }
         };
@@ -251,45 +240,41 @@ fn stt_thread(
         let level = (sum / frames as f32).sqrt().min(1.0);
         rms.store(level.to_bits() as i32, Ordering::Relaxed);
 
-        match gate.push(level, samples.len() >= MAX_SAMPLES) {
-            GateEvent::Ignore => {}
-            GateEvent::Start => {
-                samples.clear();
-                push_samples(&mut samples, chunk);
-                let _ = evt_tx.send(SttEvent::Listening);
-            }
-            GateEvent::Keep => push_samples(&mut samples, chunk),
-            GateEvent::Discard => samples.clear(),
-            GateEvent::End => {
-                push_samples(&mut samples, chunk);
-                listening = false;
-                is_listening.store(false, Ordering::Relaxed);
-                rms.store(0, Ordering::Relaxed);
-                gate.reset();
+        // Vosk keeps the utterance internally until it endpoints, so no audio is
+        // buffered here and the recognizer is dropped as soon as it answers.
+        let outcome = match recognizer.as_mut() {
+            Some(reader) => reader.accept(chunk),
+            None => continue,
+        };
+        match outcome {
+            Ok(None) => {}
+            Ok(Some(text)) => {
+                recognizer = None;
+                stop_listening(&mut listening, &is_listening, &rms);
                 let _ = evt_tx.send(SttEvent::Processing);
-                finish(&mut engine, &samples, &evt_tx);
-                samples.clear();
+                let _ = evt_tx.send(SttEvent::Final(text));
+            }
+            Err(error) => {
+                recognizer = None;
+                stop_listening(&mut listening, &is_listening, &rms);
+                let _ = evt_tx.send(SttEvent::Error(error));
             }
         }
     }
 }
 
-fn push_samples(samples: &mut Vec<i16>, chunk: &[i16]) {
-    if samples.len() >= MAX_SAMPLES {
-        return;
-    }
-    let take = chunk.len().min(MAX_SAMPLES - samples.len());
-    samples.extend_from_slice(&chunk[..take]);
+/// Mark the orb closed and stop reporting a microphone level.
+fn stop_listening(listening: &mut bool, is_listening: &AtomicBool, rms: &AtomicI32) {
+    *listening = false;
+    is_listening.store(false, Ordering::Relaxed);
+    rms.store(0, Ordering::Relaxed);
 }
 
-fn finish(engine: &mut Engine, samples: &[i16], evt_tx: &Sender<SttEvent>) {
-    match engine.transcribe(samples) {
-        Ok(text) => {
-            let _ = evt_tx.send(SttEvent::Final(text));
-        }
-        Err(error) => {
-            let _ = evt_tx.send(SttEvent::Error(error));
-        }
+/// Close a half-spoken utterance and publish whatever Vosk decoded so far.
+fn finish(recognizer: &mut Option<Recognizer>, evt_tx: &Sender<SttEvent>) {
+    if let Some(mut reader) = recognizer.take() {
+        let _ = evt_tx.send(SttEvent::Processing);
+        let _ = evt_tx.send(SttEvent::Final(reader.finish()));
     }
 }
 

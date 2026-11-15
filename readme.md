@@ -8,7 +8,7 @@ A highly optimized, deeply modified fork of Luma for the LG C1 (webOS 6).
 - **Parallax Wallpapers:** 4K backgrounds shift based on app focus.
 - **Reactive Voice Orb:** Dark polished sphere with a drifting iridescent seam, low on the screen, reacting to live microphone and TTS levels (with a simulated envelope as a fallback).
 - **Glass UI:** Fixed straight-alpha blending and 25% milky glass tiles.
-- **Siri-Style Voice Assistant:** On-device whisper.cpp STT with Silero VAD and a command-mode grammar, then local TV commands, then Qwen (NVIDIA NIM), then espeak-ng TTS, with a dual-reactivity Voice Orb (mic + TTS audio), hands-free endpointing, live web search, conversation memory, and silent app launch.
+- **Siri-Style Voice Assistant:** On-device Vosk STT, then local TV commands, then Qwen (NVIDIA NIM), then espeak-ng TTS, with a dual-reactivity Voice Orb (mic + TTS audio), self-endpointing capture, live web search, conversation memory, and silent app launch.
 
 ## Voice Assistant Setup
 
@@ -22,26 +22,25 @@ The key is read at runtime from `/var/lib/luma-home/.nim_key` and is never logge
 
 ### On-device speech recognition
 
-Speech is transcribed on the TV by whisper.cpp, so audio never leaves the device. Whisper only
-runs after Silero VAD finds speech in the clip: opening the orb lets the capture device settle,
-samples the room noise, starts capture when the level clears that floor, and ends the utterance
-after 1.5 s of continuous silence. Decoding is capped at two threads so the TV keeps a core free.
+Speech is transcribed on the TV by [Vosk](https://alphacephei.com/vosk/), so audio never leaves the
+device. The orb streams the microphone straight into a Vosk recognizer, which endpoints on its own:
+it starts when you talk, ends about a second after you stop, and decodes nothing while the room is
+quiet. One utterance is capped at 30 seconds so a noisy room cannot grow the decoder indefinitely.
 
 Transcription is unconstrained, so a question is heard as a question instead of being forced into
 a command. A transcript that starts with a command verb (`open <app>`, `launch <app>`,
 `search for <phrase>`) is resolved locally with no network round trip; anything else is forwarded
 to Qwen to answer.
 
-Two files are read from the app's `assets/` directory at runtime:
+One model directory is read from the app's `assets/` directory at runtime:
 
-| File | Purpose | Source |
+| Model | Purpose | Source |
 | --- | --- | --- |
-| `ggml-base.en.bin` | Whisper English model | [whisper.cpp models](https://huggingface.co/ggerganov/whisper.cpp) |
-| `ggml-silero-v5.1.2.bin` | Silero VAD | [ggml-org/whisper-vad](https://huggingface.co/ggml-org/whisper-vad) |
+| `vosk-model-small-en-us-0.15` | English speech recognition | [Vosk models](https://alphacephei.com/vosk/models) |
 
-The models are downloaded during packaging and are not stored in the repository. To change them,
-replace the files in the installed package's `assets/` directory. `ggml-tiny.en.bin` is
-deliberately not used: it is too inaccurate for far-field speech at living-room distance.
+The model is downloaded and unpacked during packaging and is not stored in the repository. To
+change it, replace the directory in the installed package's `assets/` folder. The larger
+`vosk-model-en-us-0.22` is deliberately not used: its 1.8 GB graph does not fit the TV's memory.
 
 ## Architecture
 

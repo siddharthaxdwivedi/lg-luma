@@ -893,17 +893,16 @@ fn run() -> Result<(), String> {
         })
         .ok();
 
-    // Voice Assistant: resolve the Whisper assets from the same root the UI
-    // loaded, so an executable-only Home mount still finds the package.
+    // Voice Assistant: resolve the Vosk model from the same root the UI loaded,
+    // so an executable-only Home mount still finds the package.
     #[cfg(feature = "voice-assistant")]
     let stt_asset = |name: &str| assets.root.join(name).to_string_lossy().into_owned();
 
-    // Voice Assistant: initialize the whisper.cpp STT engine. Capture pauses
-    // while TTS speaks so the TV never hears itself.
+    // Voice Assistant: initialize the Vosk STT engine. Capture pauses while TTS
+    // speaks so the TV never hears itself.
     #[cfg(feature = "voice-assistant")]
     let stt_handle = stt::SttHandle::spawn(stt::SttConfig {
-        model_path: stt_asset("ggml-base.en.bin"),
-        vad_model_path: stt_asset("ggml-silero-v5.1.2.bin"),
+        model_dir: stt_asset("vosk-model-small-en-us-0.15"),
         tts_speaking: tts_handle.as_ref().map(tts::TtsHandle::speaking_flag),
         ..stt::SttConfig::default()
     })

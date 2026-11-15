@@ -16,6 +16,9 @@ resolver = "3"
 default = []
 webos = ["luma-tv-helper/webos"]
 voice-assistant = []
+# Dormant whisper.cpp backend. Kept compiling under `--all-features` (so clippy
+# still covers it) without shipping it in the Voice Assistant build.
+stt-whisper = ["dep:whisper-rs-sys"]
 
 [dependencies]
 luma-tv-helper = { path = "tv-helper" }
@@ -34,7 +37,7 @@ serde_json = "1"
 time = { version = "0.3", features = ["local-offset", "formatting", "parsing"] }
 ureq = { version = "3.4", default-features = false, features = ["rustls"] }
 # Voice Assistant: STT, TTS, Cloud API
-whisper-rs-sys = "0.15"
+whisper-rs-sys = { version = "0.15", optional = true }
 espeak-ng = { version = "0.2", features = ["bundled-data-en"] }
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "stream"] }
 tokio = { version = "1.40", features = ["rt-multi-thread", "macros", "sync", "time"] }
