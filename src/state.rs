@@ -1303,8 +1303,13 @@ impl State {
                     | Target::Sidebar(_)
             ) {
                 self.jump_scroll(0.);
-            } else if control.scrollable {
-                let top = if matches!(self.focus, Target::Background(_)) {
+            } else if control.scrollable
+                && !matches!(self.focus, Target::DockApp(_))
+                && self.page != Page::Home
+            {
+                let top = if self.managing_apps() {
+                    self.app_settings_viewport().y + 16.
+                } else if matches!(self.focus, Target::Background(_)) {
                     self.backgrounds_viewport().y + 8.
                 } else if self.page == Page::Apps {
                     // Remote focus stays below the dock even though cards can draw behind it.

@@ -1823,7 +1823,7 @@ fn row(out: &mut Scene, state: &State, assets: &Assets, row: Row<'_>) {
         };
     let compact_value_width = matches!(
         row.target,
-        Target::WallpaperCycle | Target::WallpaperGradient
+        Target::WallpaperCycle | Target::WallpaperGradient | Target::WallpaperCinematic
     )
     .then(|| rotation_value_width(assets, state.preferences.language));
     let right_inset = if let Some(width) = compact_value_width {
@@ -1914,6 +1914,7 @@ fn row(out: &mut Scene, state: &State, assets: &Assets, row: Row<'_>) {
         Target::UploadWallpaper
             | Target::WallpaperCycle
             | Target::WallpaperGradient
+            | Target::WallpaperCinematic
             | Target::WidgetAdd
             | Target::WidgetReset
             | Target::Widget(2)
@@ -2554,6 +2555,17 @@ fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
                     })),
                     false,
                 ),
+                (
+                    6,
+                    "voiceOrb",
+                    "voice",
+                    Some(language.t(if state.preferences.voice_orb {
+                        "stateOn"
+                    } else {
+                        "stateOff"
+                    })),
+                    false,
+                ),
             ]
             .into_iter()
             .enumerate()
@@ -2583,6 +2595,7 @@ fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
                 .min(520.);
             let cycle_label = language.t("wallpaperCycle");
             let gradient_label = language.t("wallpaperGradient");
+            let cinematic_label = language.t("cinematicBackground");
             let gradient_width = (assets.width(gradient_label, text(20.8, 550, -0.02))
                 + rotation_value_width(assets, language)
                 + 111.6)
@@ -2635,6 +2648,27 @@ fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
                         "eye-off"
                     }),
                     value: Some(language.t(if state.preferences.wallpaper_gradient {
+                        "stateOn"
+                    } else {
+                        "stateOff"
+                    })),
+                    description: None,
+                    selected: false,
+                    chevron: false,
+                },
+            );
+            // The cinematic toggle sits at the content edge on its own, apart from the three
+            // right-aligned rows above it.
+            row(
+                out,
+                state,
+                assets,
+                Row {
+                    target: Target::WallpaperCinematic,
+                    rect: Rect::new(640., 164.8 + 84., 520., 64.),
+                    title: cinematic_label,
+                    icon: Some("sparkles"),
+                    value: Some(language.t(if state.preferences.cinematic_wallpaper {
                         "stateOn"
                     } else {
                         "stateOff"
