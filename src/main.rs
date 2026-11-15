@@ -11,7 +11,9 @@ mod companion;
 mod damage;
 mod diagnostics;
 mod egl_damage;
+mod feedback;
 mod font;
+mod glass_backdrop;
 mod i18n;
 #[path = "input-refresh.rs"]
 mod input_refresh;
@@ -52,6 +54,7 @@ mod webos_compat;
 #[cfg(test)]
 mod tests;
 
+use feedback::{Cue, Route};
 use platform::{Platform, Request, Response};
 use raster::Size;
 use sdl2::{
@@ -135,7 +138,7 @@ impl Options {
                     "  --test-update-version VERSION  Preview an available update without HTTP; also LUMA_TEST_UPDATE_VERSION"
                 );
                 println!(
-                    "\n  Press Back / Escape on Home, or hold for 600 ms, to open Recent apps.\n  --script recents,await-recents  Open the desktop recent-app preview."
+                    "\n  Hold Back / Escape for 600 ms from any page to open Recent apps.\n  --script recents,await-recents  Open the desktop recent-app preview."
                 );
                 std::process::exit(0);
             }
@@ -445,7 +448,6 @@ fn script(
                 state.keyboard_field
             } else {
                 match state.subpage {
-                    Some(state::Subpage::Greeting) => state::TextField::Name,
                     Some(state::Subpage::WeatherLocation) => state::TextField::Location,
                     Some(state::Subpage::Input(_)) => state::TextField::InputName,
                     _ => state::TextField::Apps,
@@ -473,20 +475,10 @@ fn main() {
     }
 }
 
-fn compose(
-    state: &mut State,
-    assets: &view::Assets,
-    pill: f32,
-    width: f32,
-    now: OffsetDateTime,
-) -> view::Scene {
-    let scene = view::scene_with_pill(state, assets, pill, width, now);
-    // Revealing remote focus only redraws differently when the favourites strip lands at
-    // once - Reduced Motion or a clamp after the favourites changed. Both lists otherwise
-    // take a new position that the frame loop eases toward, so the layout this compose
-    // returns is already the right one to draw.
+fn compose(state: &mut State, assets: &view::Assets, now: OffsetDateTime) -> view::Scene {
+    let scene = view::scene(state, assets, now);
     if !state.pointer && state.overlay.is_none() && state.reveal_focus(&scene.controls) {
-        view::scene_with_pill(state, assets, pill, width, now)
+        view::scene(state, assets, now)
     } else {
         scene
     }
@@ -502,16 +494,10 @@ fn input_refresh_active(state: &State, webos: bool, focused: bool, visible: bool
         && focused
         && visible
         && !state.loading
-        && state.overlay.is_none()
+        && (state.overlay.is_none() || matches!(state.overlay, Some(Overlay::Inputs)))
         && state.moving.is_none()
         && state.pressed.is_none()
         && state.recents.visibility == 0.
-        && (state.page == state::Page::Home
-            || (state.page == state::Page::Settings
-                && matches!(
-                    state.subpage,
-                    Some(state::Subpage::Inputs | state::Subpage::Input(_))
-                )))
 }
 
 fn weather_tick(state: &mut State, service: &weather_service::Service, visible: bool) {
@@ -629,7 +615,11 @@ fn run() -> Result<(), String> {
         log_home_output();
     }
     let webos = cfg!(feature = "webos");
-    let startup_stage = |stage: &str| {
+    // Exercise the shipping shader profile on a desktop without enabling TV services.
+    let gles = webos || std::env::var("LUMA_GLES").as_deref() == Ok("1");
+    let mut startup_stages = std::collections::BTreeMap::new();
+    let mut startup_stage = |stage: &str| {
+        startup_stages.insert(stage.to_owned(), startup.elapsed().as_secs_f64() * 1000.);
         if webos {
             eprintln!(
                 "Luma startup: {stage} after {} ms",
@@ -711,6 +701,9 @@ fn run() -> Result<(), String> {
         !options.script.is_empty(),
         options.test_update_version.is_some(),
     );
+    if webos && let Some(directory) = preferences_path.parent() {
+        app_artwork::set_disk_cache(directory.join("icon-cache"));
+    }
     let mut state = State::new(initial_preferences);
     if let Some(version) = &options.test_update_version {
         eprintln!(
@@ -762,6 +755,7 @@ fn run() -> Result<(), String> {
     startup_stage("preferences and workers");
 
     let sdl = sdl2::init()?;
+    let mut feedback = feedback::Feedback::default();
     let drivers: Vec<_> = sdl2::video::drivers().collect();
     if webos && !drivers.contains(&"wayland") {
         return Err(format!(
@@ -780,7 +774,7 @@ fn run() -> Result<(), String> {
     eprintln!("Luma SDL video driver: {}", video.current_video_driver());
     startup_stage("SDL video");
     let attributes = video.gl_attr();
-    if webos {
+    if gles {
         attributes.set_context_profile(GLProfile::GLES);
         attributes.set_context_version(2, 0);
     } else {
@@ -848,7 +842,7 @@ fn run() -> Result<(), String> {
     let vsync = video.gl_set_swap_interval(1).is_ok();
     eprintln!("Luma vsync: {}", if vsync { "on" } else { "off" });
     let mut renderer =
-        renderer::Renderer::new(&assets.root.join("font.ttf"), webos, text_config.embolden)?;
+        renderer::Renderer::new(&assets.root.join("font.ttf"), gles, text_config.embolden)?;
     startup_stage("renderer");
     // Redraw only what changed since the back buffer's frame (LUMA_PARTIAL=0 draws in full).
     let partial = (std::env::var("LUMA_PARTIAL").as_deref() != Ok("0"))
@@ -872,6 +866,9 @@ fn run() -> Result<(), String> {
     let mut redrawn_total = 0.;
     let mut profile = diagnostics::Profile::default();
     let mut presented = 0usize;
+    let mut first_frame_stats = None;
+    let mut first_ready_frame_stats = None;
+    let mut startup_inventory_reported = false;
     let mut captured = None;
     let mut last_drawable = None;
     let mut events = sdl.event_pump()?;
@@ -1029,18 +1026,17 @@ fn run() -> Result<(), String> {
     let mut focused = true;
     let mut press: Option<Press> = None;
     let mut back_button = BackButton::default();
-    // The navigation bar's layout depends only on the language, so measure it once and reuse it
-    // every frame instead of laying the three labels out again on each loop iteration.
-    let mut navigation = view::navigation(&assets, state.preferences.language);
-    let mut navigation_language = state.preferences.language;
-    let mut pill = navigation.items[0].x;
-    let mut pill_width = navigation.items[0].w;
+    // One instant per rendered frame, for the eased motion below.
     let mut last_frame = Instant::now();
     let mut last_minute = None;
     let mut frame = 0u64;
     let mut visible = true;
     let mut running = true;
     let mut queued_event = None;
+    // SDL starts text input during video init. Keep it off until Luma's keyboard opens: on
+    // webOS 4 some remote keys otherwise arrive as TEXTINPUT with invalid UTF-8, and sdl2
+    // panics converting them ("Invalid TextInput string") before Luma sees the event.
+    video.text_input().stop();
     let mut text_active = false;
     let mut initial_focus = options.script.is_empty();
     let mut startup_cycle_pending = state.preferences.wallpaper_cycle;
@@ -1063,8 +1059,6 @@ fn run() -> Result<(), String> {
     let mut scene = compose(
         &mut state,
         &assets,
-        pill,
-        pill_width,
         options.time.unwrap_or_else(OffsetDateTime::now_utc),
     );
     while running {
@@ -1364,6 +1358,17 @@ fn run() -> Result<(), String> {
         while let Ok(response) = updates.receiver.try_recv() {
             state.install_response(response);
         }
+        if std::mem::take(&mut state.reset_icon_cache) {
+            assets.artwork.reset_icon_cache();
+            assets.artwork.prefetch(
+                state
+                    .inventory
+                    .apps
+                    .iter()
+                    .filter(|app| crate::branding::for_key(&app.brand).is_none())
+                    .filter_map(|app| app.icon.clone()),
+            );
+        }
         while let Ok(response) = platform.receiver.try_recv() {
             match response {
                 Response::Inventory(Ok((mut inventory, warning))) => {
@@ -1382,6 +1387,10 @@ fn run() -> Result<(), String> {
                         state.preferences.language,
                     );
                     state.set_inventory(inventory, warning);
+                    if !startup_inventory_reported {
+                        startup_stage("app inventory");
+                        startup_inventory_reported = true;
+                    }
                     // Decode every installed icon now, on the artwork worker, rather than when
                     // the Apps page first shows it: a long-running Home then opens Apps ready.
                     assets.artwork.prefetch(
@@ -1418,7 +1427,7 @@ fn run() -> Result<(), String> {
                         eprintln!("Luma HDMI refresh: {error}");
                     }
                 }
-                Response::Launched(result) => {
+                Response::Launched { id, result } => {
                     state.launching = false;
                     match result {
                         Err(error) => {
@@ -1428,6 +1437,17 @@ fn run() -> Result<(), String> {
                         Ok(()) => {
                             state.notice = None;
                             state.dirty = true;
+                            let pending = state.record_app_launch(&id);
+                            running &= effects(
+                                pending,
+                                &mut state,
+                                &platform,
+                                &preferences_path,
+                                &weather_service,
+                                &wallpaper_service,
+                                &webhook_service,
+                                &updates,
+                            );
                         }
                     }
                 }
@@ -1449,6 +1469,22 @@ fn run() -> Result<(), String> {
                     command,
                     result,
                 } => {
+                    if webos
+                        && result.is_ok()
+                        && let recents::Command::Launch(id) = &command
+                    {
+                        let pending = state.record_app_launch(id);
+                        running &= effects(
+                            pending,
+                            &mut state,
+                            &platform,
+                            &preferences_path,
+                            &weather_service,
+                            &wallpaper_service,
+                            &webhook_service,
+                            &updates,
+                        );
+                    }
                     let preview = !webos
                         && state.recents_open()
                         && generation == state.recents.generation
@@ -1498,7 +1534,7 @@ fn run() -> Result<(), String> {
         }
         // Rebuild hit regions before input whenever inventory/layout changed.
         if state.dirty {
-            scene = compose(&mut state, &assets, pill, pill_width, now);
+            scene = compose(&mut state, &assets, now);
         }
         for event in queued_event
             .take()
@@ -1549,6 +1585,8 @@ fn run() -> Result<(), String> {
                 eprintln!("Luma window: {win_event:?}");
             }
             let mut pending = vec![];
+            let before_input = Route::capture(&state);
+            let mut cue = None;
             match event {
                 Event::Quit { .. } => running = false,
                 Event::User { type_, code, .. } if type_ == voice_event => {
@@ -1617,6 +1655,10 @@ fn run() -> Result<(), String> {
                         }
                         profile.pause();
                     }
+                    WindowEvent::Leave => {
+                        state.hover = None;
+                        state.dirty = true;
+                    }
                     WindowEvent::FocusLost => {
                         if webos {
                             if matches!(
@@ -1683,31 +1725,38 @@ fn run() -> Result<(), String> {
                             if !repeat && back_button.native_hold(Instant::now()) {
                                 press = None;
                                 pending = state.open_recents();
+                                cue = Some(Cue::Select);
                             }
                         }
                         key if is_back(key, webos) => {
                             if !repeat {
                                 press = None;
                                 pending = back_button.key_down(&mut state, key, Instant::now());
+                                cue = Some(Cue::Back);
                             }
                         }
                         Keycode::Up if !repeat || !state.recents_open() => {
                             pending = state.direction(Direction::Up, &scene.controls);
+                            cue = Some(Cue::Navigate);
                         }
                         Keycode::Down => {
-                            pending = state.direction(Direction::Down, &scene.controls)
+                            pending = state.direction(Direction::Down, &scene.controls);
+                            cue = Some(Cue::Navigate);
                         }
                         Keycode::Left => {
-                            pending = state.direction(Direction::Left, &scene.controls)
+                            pending = state.direction(Direction::Left, &scene.controls);
+                            cue = Some(Cue::Navigate);
                         }
                         Keycode::Right => {
-                            pending = state.direction(Direction::Right, &scene.controls)
+                            pending = state.direction(Direction::Right, &scene.controls);
+                            cue = Some(Cue::Navigate);
                         }
                         Keycode::Return | Keycode::KpEnter
                             if matches!(state.overlay, Some(Overlay::SystemKeyboard)) =>
                         {
                             press = None;
                             pending = state.finish_text_input();
+                            cue = Some(Cue::Select);
                         }
                         Keycode::Return | Keycode::KpEnter if !repeat => {
                             press = Some(Press {
@@ -1721,6 +1770,7 @@ fn run() -> Result<(), String> {
                         Keycode::Backspace if !repeat => {
                             press = None;
                             pending = state.back();
+                            cue = Some(Cue::Back);
                         }
                         Keycode::Clear
                             if matches!(state.overlay, Some(Overlay::SystemKeyboard)) =>
@@ -1731,6 +1781,7 @@ fn run() -> Result<(), String> {
                         Keycode::M | Keycode::Menu if !repeat && state.overlay.is_none() => {
                             press = None;
                             state.options();
+                            cue = Some(Cue::Select);
                         }
                         Keycode::F5 if !repeat => pending.push(Effect::Reload),
                         _ => {}
@@ -1750,6 +1801,7 @@ fn run() -> Result<(), String> {
                         } else {
                             state.back()
                         };
+                        cue = Some(if long { Cue::Select } else { Cue::Back });
                     }
                 }
                 Event::KeyUp {
@@ -1762,6 +1814,7 @@ fn run() -> Result<(), String> {
                         && held.target == state.focus
                     {
                         pending = state.activate();
+                        cue = Some(Cue::Select);
                     }
                 }
                 Event::MouseMotion { x, y, .. }
@@ -1771,6 +1824,11 @@ fn run() -> Result<(), String> {
                     let hovered = hit(&scene.controls, &window, x, y, &state);
                     if let Some(target) = hovered.clone() {
                         state.pointer_focus(target);
+                        cue = Some(Cue::Navigate);
+                    }
+                    if state.hover != hovered {
+                        state.hover = hovered.clone();
+                        state.dirty = true;
                     }
                     if press
                         .as_ref()
@@ -1793,6 +1851,7 @@ fn run() -> Result<(), String> {
                         state.pointer_focus(target);
                         if mouse_btn == MouseButton::Right {
                             state.options();
+                            cue = Some(Cue::Select);
                             press = None;
                         } else if mouse_btn == MouseButton::Left {
                             press = Some(Press {
@@ -1818,13 +1877,15 @@ fn run() -> Result<(), String> {
                             && hit(&scene.controls, &window, x, y, &state).as_ref()
                                 == Some(&held.target) =>
                     {
-                        pending = state.activate()
+                        pending = state.activate();
+                        cue = Some(Cue::Select);
                     }
                     None if scene.modal.is_some_and(|rect| {
                         pointer_position(&window, x, y).is_some_and(|(x, y)| !rect.contains(x, y))
                     }) =>
                     {
-                        pending = state.back()
+                        pending = state.back();
+                        cue = Some(Cue::Back);
                     }
                     _ => {}
                 },
@@ -1837,6 +1898,7 @@ fn run() -> Result<(), String> {
                         } else {
                             Direction::Left
                         });
+                        cue = Some(Cue::Navigate);
                     }
                     state.pointer = false;
                     state.dirty = true;
@@ -1858,6 +1920,15 @@ fn run() -> Result<(), String> {
                     }
                 }
                 _ => {}
+            }
+            feedback.sync(state.preferences.ui_sounds, focused && visible);
+            if state.preferences.ui_sounds
+                && focused
+                && visible
+                && !scripted_input
+                && let Some(cue) = before_input.cue(cue, &state, !pending.is_empty())
+            {
+                feedback.play(&sdl, cue);
             }
             running &= effects(
                 pending,
@@ -1888,12 +1959,15 @@ fn run() -> Result<(), String> {
             }
             // SDL may deliver several navigation events in a single poll.
             if state.dirty {
-                scene = compose(&mut state, &assets, pill, pill_width, now);
+                scene = compose(&mut state, &assets, now);
             }
         }
         if back_button.held(Instant::now()) {
             press = None;
             let pending = state.open_recents();
+            if state.preferences.ui_sounds && focused && visible && !scripted_input {
+                feedback.play(&sdl, Cue::Select);
+            }
             running &= effects(
                 pending,
                 &mut state,
@@ -1911,7 +1985,18 @@ fn run() -> Result<(), String> {
         {
             held.held = true;
             state.pressed = None;
+            let before_hold = Route::capture(&state);
             state.hold();
+            if state.preferences.ui_sounds
+                && focused
+                && visible
+                && !scripted_input
+                && before_hold
+                    .cue(Some(Cue::Navigate), &state, false)
+                    .is_some()
+            {
+                feedback.play(&sdl, Cue::Select);
+            }
         }
         if !state.loading
             && frame.is_multiple_of(3)
@@ -2004,29 +2089,13 @@ fn run() -> Result<(), String> {
         last_frame = Instant::now();
         state.update_parallax(ease, 1. - (-20. * ease).exp());
         state.update_voice(ease);
-        if state.preferences.language != navigation_language {
-            navigation_language = state.preferences.language;
-            navigation = view::navigation(&assets, navigation_language);
-        }
-        let target = navigation.items[state.page_index()].x;
-        let target_width = navigation.items[state.page_index()].w;
-        if state.preferences.reduced_motion
-            || ((pill - target).abs() < 0.2 && (pill_width - target_width).abs() < 0.2)
-        {
-            pill = target;
-            pill_width = target_width;
-        } else {
-            pill += (target - pill) * (1. - (-20. * ease).exp());
-            pill_width += (target_width - pill_width) * (1. - (-20. * ease).exp());
-            state.dirty = true;
-        }
         if ken_burns {
             state.dirty = true;
         }
         // Hover lift, the held-down squeeze and the launch zoom ride the same exponential
-        // smoothing as the nav pill above: about 0.15 s to settle, interpolated every frame so
-        // a focused icon eases up instead of snapping, a held OK pinches the tile, and a
-        // released press lets it pop back. Reduced Motion pins the values instantly.
+        // smoothing as the parallax and scroll easing above: about 0.15 s to settle, interpolated
+        // every frame so a focused icon eases up instead of snapping, a held OK pinches the
+        // tile, and a released press lets it pop back. Reduced Motion pins the values instantly.
         let smooth = 1. - (-20. * ease).exp();
         // The scrolling list and the favourites strip glide to the positions `reveal_focus`
         // picked. Without this the grid and the strip jumped the moment focus moved onto a row
@@ -2124,7 +2193,7 @@ fn run() -> Result<(), String> {
                     .is_some_and(|limit| presented + 1 >= limit));
         if ((state.dirty || options.profile_frames.is_some()) && visible) || final_frame {
             let compose_started = Instant::now();
-            scene = compose(&mut state, &assets, pill, pill_width, now);
+            scene = compose(&mut state, &assets, now);
             let compose_ms = compose_started.elapsed().as_secs_f64() * 1000.;
             let (width, height) = window.drawable_size();
             if width > 0 && height > 0 {
@@ -2181,9 +2250,16 @@ fn run() -> Result<(), String> {
                 window.gl_swap_window();
                 let swap_ms = swap_started.elapsed().as_secs_f64() * 1000.;
                 if presented == 0 {
+                    first_frame_stats = Some(renderer.stats().clone());
                     startup_stage("first frame");
                     if webos {
                         let stats = renderer.stats();
+                        eprintln!(
+                            "Luma startup: glass {:.1} ms, {} prepared loads, {} runtime filters",
+                            stats.glass_prepare_ms,
+                            stats.glass_precomputed_loads,
+                            stats.glass_runtime_prepares,
+                        );
                         eprintln!(
                             "Luma vector text: {} glyphs, {} text runs, {} KiB glyph geometry, {} KiB GPU text",
                             stats.cached_glyphs,
@@ -2194,6 +2270,13 @@ fn run() -> Result<(), String> {
                     }
                 }
                 presented += 1;
+                if startup_inventory_reported
+                    && state.error.is_none()
+                    && first_ready_frame_stats.is_none()
+                {
+                    startup_stage("apps ready frame");
+                    first_ready_frame_stats = Some(renderer.stats().clone());
+                }
                 last_present = Instant::now();
                 if options.profile_frames.is_some() {
                     let stats = renderer.stats();
@@ -2271,7 +2354,7 @@ fn run() -> Result<(), String> {
             if page != state.page {
                 let started = Instant::now();
                 let current = std::mem::replace(&mut state.page, page);
-                let hidden = view::scene_with_pill(&state, &assets, pill, pill_width, now);
+                let hidden = view::scene(&state, &assets, now);
                 state.page = current;
                 let (width, height) = window.drawable_size();
                 renderer.prepare(&hidden.draw, width, height);
@@ -2295,14 +2378,15 @@ fn run() -> Result<(), String> {
         let timeout = if !visible {
             idle_waits = 0;
             250
-        } else if options.profile_frames.is_some() {
+        } else if state.animating() || options.profile_frames.is_some() {
             // Profiling measures presentations, so it keeps polling and lets the swap pace it.
             idle_waits = 0;
             0
-        } else if pill != target || pill_width != target_width || animating {
-            // Animation in progress. When the swap blocks on the display this polls for free;
-            // when SDL refused the swap interval it waits out a frame instead of spinning the
-            // CPU at full rate.
+        } else if animating {
+            // Tile easing in progress: the lift, the squeeze, the launch zoom and the parallax
+            // drift are not part of `State::animating`. When the swap blocks on the display this
+            // polls for free; when SDL refused the swap interval it waits out a frame instead
+            // of spinning the CPU at full rate.
             idle_waits = 0;
             if vsync { 0 } else { 16 }
         } else if ken_burns {
@@ -2380,6 +2464,8 @@ fn run() -> Result<(), String> {
             "drawable_is_4k": Size::new(dw, dh).is_4k(), "presented_frames": presented,
             "graphics": renderer.info, "last_presented": renderer.stats(), "capture": captured,
             "text_rendering": text_config,
+            "startup": { "stages_ms": startup_stages, "first_frame": first_frame_stats,
+                "first_ready_frame": first_ready_frame_stats },
             "profile": options.profile_frames.map(|_| profile.summary()),
             "partial_redraw": partial.as_ref().map(egl_damage::PartialUpdate::describe),
             "redrawn_fraction_mean": redrawn_total / presented.max(1) as f64,

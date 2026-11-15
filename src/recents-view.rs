@@ -106,6 +106,7 @@ pub fn render(out: &mut Scene, state: &State, assets: &Assets) {
             let focused = *focus == target;
             let radius = 34. * rect.w / 900.;
             let prominence = (1. - depth).clamp(0., 1.);
+            out.glass(rect.inset(-6.), radius + 6.);
             let app = state
                 .inventory
                 .apps

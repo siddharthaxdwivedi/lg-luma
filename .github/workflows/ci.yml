@@ -41,7 +41,7 @@ jobs:
             await core.summary
               .addHeading(`Luma ${process.env.RELEASE_TAG}`)
               .addRaw(publish
-                ? 'Release authorized: this main commit merged Version Packages with a version increase. Publication waits for checks, all four smoke suites, and the verified ARM package.'
+                ? 'Release authorized: this main commit merged Version Packages with a version increase. Publication waits for checks, all smoke suites, and the verified ARM package.'
                 : 'Validation only: this run cannot publish. Merge the Version Packages PR to start the eligible main-commit release run.')
               .write();
             return publish;
@@ -77,7 +77,7 @@ jobs:
           # FontTools recommends large optional scientific Python packages. xauth is needed by xvfb-run.
           # whisper.cpp STT build requires: cmake, build-essential, libasound2-dev, libssl-dev
           sudo apt-get "${apt_options[@]}" install -y --no-install-recommends \
-            libsdl2-dev pkg-config woff2 python3-fonttools libgl1-mesa-dri xvfb xauth \
+            libsdl2-dev pkg-config woff2 python3-fonttools libgl1-mesa-dri libegl1 libgles2 xvfb xauth \
             cmake build-essential libasound2-dev libssl-dev
       - name: Install formatting tools
         run: |
@@ -131,6 +131,9 @@ jobs:
           - suite: Translations
             script: tests/translations-smoke.mjs
             artifact: translations
+          - suite: Startup and glass cache
+            script: tests/startup-smoke.mjs
+            artifact: startup
     steps:
       - uses: actions/checkout@v7
       - uses: pnpm/action-setup@v6
@@ -143,7 +146,9 @@ jobs:
         run: |
           apt_options=(-o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30)
           sudo apt-get "${apt_options[@]}" update
-          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends libsdl2-2.0-0 libasound2t64 libgl1-mesa-dri xvfb xauth
+          # SDL loads EGL/GLES dynamically for the GLES rendering scenario.
+          sudo apt-get "${apt_options[@]}" install -y --no-install-recommends \
+            libsdl2-2.0-0 libasound2t64 libgl1-mesa-dri libegl1 libgles2 xvfb xauth
       - uses: actions/download-artifact@v8
         with:
           name: smoke-inputs
@@ -376,6 +381,7 @@ jobs:
             dist/*.ipk
             dist/sha256sums
             dist/repo.json
+            dist/com.ecklf.luma.manifest.json
             dist/description.html
             dist/app-icon-large.png
   build:
@@ -441,7 +447,7 @@ jobs:
             fi
           fi
 
-          files=(release/*.ipk release/sha256sums release/repo.json release/description.html release/app-icon-large.png)
+          files=(release/*.ipk release/sha256sums release/repo.json release/com.ecklf.luma.manifest.json release/description.html release/app-icon-large.png)
           if [ "$state" = true ]; then
             gh release upload "$RELEASE_TAG" "${files[@]}" --clobber
             gh release edit "$RELEASE_TAG" --draft=false

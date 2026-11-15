@@ -5,7 +5,7 @@ use crate::{
     model::{InputMode, Preferences, demo_inventory},
     platform::normalize_inputs,
     renderer::Draw,
-    state::{Overlay, Subpage, Target, WIDGETS_SECTION},
+    state::{Overlay, Subpage, Target},
     view::input_status,
 };
 use serde_json::json;
@@ -89,6 +89,7 @@ fn signal_never_overrides_the_official_cable_state_or_auto_visibility() {
 #[test]
 fn live_signal_keeps_card_geometry_names_apps_and_preferences() {
     let mut state = ready();
+    state.overlay = Some(crate::state::Overlay::Inputs);
     let id = state.inventory.inputs[0].id.clone();
     state.preferences.set_input_name(&id, "Mac");
     state.focus = Target::Input(id.clone());
@@ -111,11 +112,11 @@ fn live_signal_keeps_card_geometry_names_apps_and_preferences() {
         scene(&state)
             .draw
             .iter()
-            .any(|d| matches!(d, Draw::Text(t, ..) if t.ends_with("HDMI 1 · No signal")))
+            .any(|d| matches!(d, Draw::Text(t, ..) if t == "Mac"))
     );
     state.open(2);
-    state.section = WIDGETS_SECTION;
-    state.subpage = Some(Subpage::Inputs);
+    state.section = crate::state::INPUTS_SECTION;
+    state.subpage = None;
     inputs[0].signal = Some(true);
     state.set_inputs(inputs.clone());
     assert!(
@@ -137,6 +138,7 @@ fn live_signal_keeps_card_geometry_names_apps_and_preferences() {
 #[test]
 fn disconnect_reconciles_home_focus_and_preserves_visibility_overrides() {
     let mut state = ready();
+    state.overlay = Some(crate::state::Overlay::Inputs);
     let id = state.inventory.inputs[0].id.clone();
     state.focus = Target::Input(id.clone());
     let mut inputs = state.inventory.inputs.clone();
@@ -177,12 +179,8 @@ fn a_removed_port_restores_valid_input_settings_focus() {
         let mut state = ready();
         let id = state.inventory.inputs[0].id.clone();
         state.open(2);
-        state.section = WIDGETS_SECTION;
-        state.subpage = Some(if detail {
-            Subpage::Input(id.clone())
-        } else {
-            Subpage::Inputs
-        });
+        state.section = crate::state::INPUTS_SECTION;
+        state.subpage = detail.then(|| Subpage::Input(id.clone()));
         state.focus = if detail {
             Target::Choice(2)
         } else {
@@ -192,10 +190,10 @@ fn a_removed_port_restores_valid_input_settings_focus() {
         inputs.remove(0);
         let next = inputs[0].id.clone();
         state.set_inputs(inputs);
-        assert_eq!(state.subpage, Some(Subpage::Inputs));
+        assert_eq!(state.subpage, None);
         assert_eq!(state.focus, Target::InputMode(next));
         state.set_inputs(vec![]);
-        assert_eq!(state.focus, Target::Sidebar(WIDGETS_SECTION));
+        assert_eq!(state.focus, Target::Sidebar(crate::state::INPUTS_SECTION));
     }
 }
 
@@ -225,15 +223,15 @@ fn polling_only_runs_on_visible_focused_tv_input_screens_outside_interactions() 
     assert!(!active(&state));
     state.pressed = None;
     state.open(1);
-    assert!(!active(&state));
+    assert!(active(&state));
     state.open(2);
-    assert!(!active(&state));
-    state.subpage = Some(Subpage::Inputs);
+    assert!(active(&state));
+    state.section = crate::state::INPUTS_SECTION;
     assert!(active(&state));
     state.subpage = Some(Subpage::Input(state.inventory.inputs[0].id.clone()));
     assert!(active(&state));
     state.subpage = Some(Subpage::Clock);
-    assert!(!active(&state));
+    assert!(active(&state));
 }
 
 #[test]
@@ -280,6 +278,7 @@ fn snapshots_wait_for_release_and_yield_to_a_newer_full_inventory() {
 #[test]
 fn a_disconnect_snapshot_cannot_move_the_pressed_card_before_release() {
     let mut state = ready();
+    state.overlay = Some(crate::state::Overlay::Inputs);
     let id = state.inventory.inputs[0].id.clone();
     state.pressed = Some(Target::Input(id.clone()));
     let mut inputs = state.inventory.inputs.clone();

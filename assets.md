@@ -25,14 +25,22 @@
 - Lucide interface icons: exported standalone SVG sources in `assets/ui-icons/`, ISC license
   bundled at `assets/licenses/lucide.txt`. The Luma upload icon and the small `luma-mark.svg` reuse
   original project artwork under MIT. PlayStation/Apple TV input paths were supplied by the user;
-  the brand marks belong to Sony/Apple. Spotify/Kodi symbol treatments use the original native
+  the brand marks belong to Sony/Apple. The Shield and Xbox input icons are the NVIDIA eye and Xbox logo from Simple
+  Icons (CC0); the marks belong to NVIDIA and Microsoft. The Steam input icon is from
+  [Simple Icons](https://github.com/simple-icons/simple-icons/blob/develop/icons/steam.svg)
+  (CC0); the mark belongs to Valve. The Switch and Switch 2 input icons are the
+  Wikimedia Commons logo files `Nintendo_Switch_Logo.svg` and
+  `Nintendo_Switch_2_logo_transparent_black.svg`, recoloured to `currentColor`; the marks belong to
+  Nintendo. Spotify/Kodi symbol treatments use the original native
   artwork. Logos identify third-party apps; Luma is unaffiliated with their owners.
 - SDL-webOS 2.30.12 (`release-2.30.12-webos.5`, standard SDL ABI), zlib license.
   `tools/webos-runtime.mjs` records archive/library SHA-256. Notice at `assets/licenses/sdl2.txt`.
 - QR Code generator (`qrcodegen`): Project Nayuki, MIT; `assets/licenses/qrcodegen.txt`.
 - Local interface discovery (`if-addrs`): MaidSafe.net limited and messense, MIT;
   `assets/licenses/if-addrs.txt`.
-- `assets/ui-icons/upload.svg` and `assets/wallpaper-upload/`: original Luma artwork/UI, MIT.
+- `assets/ui-icons/upload.svg`, `assets/ui-icons/input-disk.svg` and `assets/wallpaper-upload/`: original Luma artwork/UI, MIT.
+- `assets/ui-icons/volume.svg` and the synthesized UI cues in `src/feedback.rs`: original Luma
+  artwork/audio, MIT. No Apple/tvOS sound recordings are included.
 
 The bundled icon/logo SVG sources are compiled into derived `.lvec` triangles with the same
 source licenses. Apple TV, Disney+, Prime Video and Das Erste retain the white display treatment.
@@ -41,6 +49,8 @@ CC BY-SA attribution. Source licence notices and this document travel inside the
 
 Generated `.build/assets/thumbnails/` are cropped/resized derivatives of the same wallpaper
 sources. Original sources remain in `assets/`; no artwork service is contacted on the TV.
+Generated `wallpapers/*.glass.png` files are lossless two-level filtered derivatives of
+the final wallpapers, prepared offline for Liquid Glass and covered by the same licenses.
 
 ## Brand SVGs
 

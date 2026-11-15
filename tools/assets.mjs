@@ -8,6 +8,8 @@ const root = path.resolve(import.meta.dirname, '..');
 const source = path.join(root, 'assets');
 const out = path.join(root, '.build/assets');
 const highResolution = process.argv.includes('--4k');
+// Original raster artwork stays separate and replaceable, with its licenses/source notice.
+await fs.cp(path.join(source, 'weather'), path.join(out, 'weather'), { recursive: true });
 // Retire generated dumps from older asset caches as well as the source assets.
 for (const legacy of ['app-icons', 'icons.json', 'colors.json']) {
   await fs.rm(path.join(out, legacy), { recursive: true, force: true });
@@ -104,6 +106,14 @@ for (const file of await fs.readdir(path.join(source, 'wallpapers'))) {
     .jpeg({ quality: 82 })
     .toFile(path.join(out, 'thumbnails', `${id}.jpg`));
 }
+// Prepare the exact runtime glass filter on the host, not before the TV's first frame.
+const glass = spawnSync(process.execPath, [path.join(import.meta.dirname, 'glass-assets.mjs')], {
+  cwd: root,
+  stdio: 'inherit',
+  timeout: 600000,
+});
+if (glass.error) throw glass.error;
+if (glass.status !== 0) throw new Error('Glass backdrop preparation failed.');
 // webOS shows `splashBackground` (a static image, scaled to 1080p) until the window opens. One
 // 1080p PNG per background lets the package start on the user's wallpaper instead of a grey card.
 for (const file of await fs.readdir(path.join(out, 'wallpapers'))) {

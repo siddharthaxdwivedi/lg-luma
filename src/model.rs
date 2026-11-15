@@ -3,7 +3,6 @@ use crate::weather::{Location, Unit};
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashSet};
 
-pub const CATEGORIES: [&str; 4] = ["Streaming", "Music", "Gaming", "Utilities"];
 pub const BACKGROUNDS: [(&str, &str); 9] = [
     ("slate", "Slate"),
     ("midnight", "Midnight"),
@@ -212,9 +211,134 @@ impl DateFormat {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AppSorting {
+    #[default]
+    Alphabetical,
+    Usage,
+}
+
+impl AppSorting {
+    pub const ALL: [Self; 2] = [Self::Alphabetical, Self::Usage];
+
+    pub fn label_key(self) -> &'static str {
+        match self {
+            Self::Alphabetical => "appSortingAlphabetical",
+            Self::Usage => "appSortingUsage",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum WeatherStyle {
+    #[default]
+    Standard,
+    NoIcon,
+    Compact,
+}
+
+impl WeatherStyle {
+    pub const ALL: [Self; 3] = [Self::Standard, Self::NoIcon, Self::Compact];
+
+    pub fn label_key(self) -> &'static str {
+        match self {
+            Self::Standard => "weatherStyleStandard",
+            Self::NoIcon => "weatherStyleNoIcon",
+            Self::Compact => "weatherStyleCompact",
+        }
+    }
+
+    pub fn index(self) -> usize {
+        Self::ALL.iter().position(|style| *style == self).unwrap()
+    }
+}
+
+pub const HOME_GRID_COLUMNS: usize = 6;
+pub const HOME_GRID_ROWS: usize = 4;
+pub const HOME_GRID_CELLS: usize = HOME_GRID_COLUMNS * HOME_GRID_ROWS;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum HomeWidget {
+    Weather,
+    Greeting,
+}
+
+impl HomeWidget {
+    pub const ALL: [Self; 2] = [Self::Greeting, Self::Weather];
+
+    pub fn span(self) -> (u8, u8) {
+        match self {
+            Self::Greeting => (4, 1),
+            Self::Weather => (2, 2),
+        }
+    }
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Self::Weather => "weather",
+            Self::Greeting => "greeting",
+        }
+    }
+
+    pub fn default_position(self) -> WidgetPosition {
+        WidgetPosition {
+            column: match self {
+                Self::Greeting => 0,
+                Self::Weather => 4,
+            },
+            row: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub struct WidgetPosition {
+    pub column: u8,
+    pub row: u8,
+}
+
+impl WidgetPosition {
+    pub fn from_cell(cell: usize) -> Option<Self> {
+        (cell < HOME_GRID_CELLS).then_some(Self {
+            column: (cell % HOME_GRID_COLUMNS) as u8,
+            row: (cell / HOME_GRID_COLUMNS) as u8,
+        })
+    }
+
+    pub fn cell(self) -> usize {
+        usize::from(self.row) * HOME_GRID_COLUMNS + usize::from(self.column)
+    }
+
+    pub fn fits(self, widget: HomeWidget) -> bool {
+        let (width, height) = widget.span();
+        usize::from(self.column) + usize::from(width) <= HOME_GRID_COLUMNS
+            && usize::from(self.row) + usize::from(height) <= HOME_GRID_ROWS
+    }
+
+    fn overlaps(self, widget: HomeWidget, other: Self, other_widget: HomeWidget) -> bool {
+        let (w, h) = widget.span();
+        let (ow, oh) = other_widget.span();
+        u16::from(self.column) < u16::from(other.column) + u16::from(ow)
+            && u16::from(other.column) < u16::from(self.column) + u16::from(w)
+            && u16::from(self.row) < u16::from(other.row) + u16::from(oh)
+            && u16::from(other.row) < u16::from(self.row) + u16::from(h)
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(default)]
 pub struct Preferences {
+    pub weather_style: WeatherStyle,
+    pub app_sorting: AppSorting,
+    pub app_launch_counts: BTreeMap<String, u64>,
+    pub greeting_position: WidgetPosition,
+    pub weather_position: WidgetPosition,
+    /// Read-only marker for migrating the short-lived separate-Date draft.
+    #[serde(rename = "date_position", skip_serializing)]
+    pub legacy_date_position: Option<WidgetPosition>,
     pub favorites: Option<Vec<String>>,
     pub custom_tiles: Vec<CustomTile>,
     pub hidden: Vec<String>,
@@ -222,22 +346,21 @@ pub struct Preferences {
     /// Last manually chosen splash, independent of automatic rotation.
     pub splash_background: Option<String>,
     pub deleted_backgrounds: Vec<String>,
-    pub show_home_names: bool,
-    pub show_app_names: bool,
     pub hour_24: bool,
     pub reduced_motion: bool,
+    pub ui_sounds: bool,
     /// Show the reactive voice orb while the remote's mic key is held. The
     /// settings row also previews it when no mic key is available.
     pub voice_orb: bool,
     pub show_seconds: bool,
-    /// Optional name appended to the Home greeting ("Good evening, Ana."). Empty = plain greeting.
-    pub greeting_name: String,
     pub show_greeting: bool,
     pub show_date: bool,
     pub date_format: DateFormat,
     pub input_modes: BTreeMap<String, InputMode>,
     /// Custom names by input app ID; the TV's port and label stay visible as detail.
     pub input_names: BTreeMap<String, String>,
+    /// Bundled input icon overrides by input app ID; absent means automatic detection.
+    pub input_icons: BTreeMap<String, String>,
     #[serde(deserialize_with = "crate::weather::deserialize_enabled")]
     pub show_weather: bool,
     #[serde(deserialize_with = "crate::weather::deserialize_location")]
@@ -262,24 +385,29 @@ pub struct Preferences {
 impl Default for Preferences {
     fn default() -> Self {
         Self {
+            weather_style: WeatherStyle::default(),
+            app_sorting: AppSorting::default(),
+            app_launch_counts: BTreeMap::new(),
+            greeting_position: HomeWidget::Greeting.default_position(),
+            weather_position: HomeWidget::Weather.default_position(),
+            legacy_date_position: None,
             favorites: None,
             custom_tiles: vec![],
             hidden: vec![],
             background: "dunes".into(),
             splash_background: None,
             deleted_backgrounds: vec![],
-            show_home_names: false,
-            show_app_names: true,
             hour_24: false,
             reduced_motion: false,
+            ui_sounds: false,
             voice_orb: true,
             show_seconds: false,
-            greeting_name: String::new(),
             show_greeting: true,
             show_date: true,
             date_format: DateFormat::default(),
             input_modes: BTreeMap::new(),
             input_names: BTreeMap::new(),
+            input_icons: BTreeMap::new(),
             show_weather: true,
             weather_location: None,
             temperature_unit: Unit::Celsius,
@@ -294,6 +422,90 @@ impl Default for Preferences {
 }
 
 impl Preferences {
+    pub fn compare_apps(&self, a: &App, b: &App) -> std::cmp::Ordering {
+        let usage = |app: &App| self.app_launch_counts.get(&app.id).copied().unwrap_or(0);
+        let count = match self.app_sorting {
+            AppSorting::Alphabetical => std::cmp::Ordering::Equal,
+            AppSorting::Usage => usage(b).cmp(&usage(a)),
+        };
+        count
+            .then_with(|| a.title.to_lowercase().cmp(&b.title.to_lowercase()))
+            .then_with(|| a.id.cmp(&b.id))
+    }
+
+    pub fn weather_visible(&self) -> bool {
+        self.show_weather
+    }
+
+    pub fn widget_position(&self, widget: HomeWidget) -> WidgetPosition {
+        match widget {
+            HomeWidget::Greeting => self.greeting_position,
+            HomeWidget::Weather => self.weather_position,
+        }
+    }
+
+    pub fn has_widget(&self, widget: HomeWidget) -> bool {
+        match widget {
+            HomeWidget::Greeting => self.show_greeting,
+            HomeWidget::Weather => self.show_weather,
+        }
+    }
+
+    /// Restore widget membership and placement without discarding configuration.
+    pub fn reset_widgets(&mut self) -> bool {
+        let changed = HomeWidget::ALL.into_iter().any(|widget| {
+            !self.has_widget(widget) || self.widget_position(widget) != widget.default_position()
+        });
+        for widget in HomeWidget::ALL {
+            self.set_widget_present(widget, true);
+            self.set_widget_position(widget, widget.default_position());
+        }
+        self.legacy_date_position = None;
+        changed
+    }
+
+    pub fn set_widget_present(&mut self, widget: HomeWidget, present: bool) {
+        match widget {
+            HomeWidget::Greeting => self.show_greeting = present,
+            HomeWidget::Weather => self.show_weather = present,
+        }
+    }
+
+    pub fn widget_at(&self, position: WidgetPosition) -> Option<HomeWidget> {
+        HomeWidget::ALL.into_iter().find(|widget| {
+            let anchor = self.widget_position(*widget);
+            let (w, h) = widget.span();
+            self.has_widget(*widget)
+                && position.column >= anchor.column
+                && position.row >= anchor.row
+                && u16::from(position.column) < u16::from(anchor.column) + u16::from(w)
+                && u16::from(position.row) < u16::from(anchor.row) + u16::from(h)
+        })
+    }
+
+    pub fn can_place_widget(&self, widget: HomeWidget, position: WidgetPosition) -> bool {
+        position.fits(widget)
+            && HomeWidget::ALL
+                .into_iter()
+                .filter(|other| *other != widget && self.has_widget(*other))
+                .all(|other| !position.overlaps(widget, self.widget_position(other), other))
+    }
+
+    pub fn place_widget(&mut self, widget: HomeWidget, position: WidgetPosition) -> bool {
+        if !self.can_place_widget(widget, position) || self.widget_position(widget) == position {
+            return false;
+        }
+        self.set_widget_position(widget, position);
+        true
+    }
+
+    fn set_widget_position(&mut self, widget: HomeWidget, position: WidgetPosition) {
+        match widget {
+            HomeWidget::Greeting => self.greeting_position = position,
+            HomeWidget::Weather => self.weather_position = position,
+        }
+    }
+
     pub fn splash_background(&self) -> &str {
         self.splash_background
             .as_deref()
@@ -383,7 +595,64 @@ impl Preferences {
         }
     }
 
+    pub fn input_icon(&self, id: &str) -> Option<&'static str> {
+        self.input_icons.get(id).and_then(|saved| {
+            INPUT_ICONS
+                .iter()
+                .find(|(icon, _)| *icon == saved)
+                .map(|(icon, _)| *icon)
+        })
+    }
+
+    /// An empty icon restores automatic detection. Unknown assets are never saved.
+    pub fn set_input_icon(&mut self, id: &str, icon: &str) -> bool {
+        if !valid_app_id(id) {
+            return false;
+        }
+        if icon.is_empty() {
+            return self.input_icons.remove(id).is_some();
+        }
+        if !INPUT_ICONS.iter().any(|(known, _)| *known == icon) {
+            return false;
+        }
+        self.input_icons.insert(id.into(), icon.into()) != Some(icon.into())
+    }
+
     pub fn sanitize(&mut self) {
+        // Collapse the previous draft's untouched separate-Date arrangement.
+        // Custom Greeting/Weather anchors remain unchanged.
+        if self.legacy_date_position.take().is_some()
+            && self.show_greeting
+            && self.show_weather
+            && self.greeting_position == (WidgetPosition { column: 0, row: 1 })
+            && self.weather_position == (WidgetPosition { column: 0, row: 2 })
+        {
+            self.greeting_position = HomeWidget::Greeting.default_position();
+            self.weather_position = HomeWidget::Weather.default_position();
+        }
+        let mut placed = Vec::new();
+        for widget in HomeWidget::ALL {
+            if !self.has_widget(widget) {
+                if !self.widget_position(widget).fits(widget) {
+                    self.set_widget_position(widget, widget.default_position());
+                }
+                continue;
+            }
+            let valid = |position: WidgetPosition| {
+                position.fits(widget)
+                    && placed.iter().all(|other| {
+                        !position.overlaps(widget, self.widget_position(*other), *other)
+                    })
+            };
+            if !valid(self.widget_position(widget)) {
+                let position = std::iter::once(widget.default_position())
+                    .chain((0..HOME_GRID_CELLS).filter_map(WidgetPosition::from_cell))
+                    .find(|position| valid(*position))
+                    .unwrap();
+                self.set_widget_position(widget, position);
+            }
+            placed.push(widget);
+        }
         if self.splash_background.as_ref().is_some_and(|id| {
             !BACKGROUNDS.iter().any(|(known, _)| *known == id) && !crate::wallpapers::valid_id(id)
         }) {
@@ -427,6 +696,9 @@ impl Preferences {
             });
             self.custom_tiles.truncate(TILE_LIMIT);
         }
+        self.input_icons.retain(|id, icon| {
+            valid_app_id(id) && INPUT_ICONS.iter().any(|(known, _)| *known == icon)
+        });
         self.input_modes.retain(|id, _| valid_app_id(id));
         self.input_names = std::mem::take(&mut self.input_names)
             .into_iter()
@@ -437,6 +709,26 @@ impl Preferences {
             .collect();
     }
 }
+
+/// Every bundled device SVG offered by the native input icon picker.
+pub const INPUT_ICONS: [(&str, &str); 16] = [
+    ("hdmi", "inputIconHdmi"),
+    ("usb", "inputIconUsb"),
+    ("apple-tv", "inputIconAppleTv"),
+    ("computer", "inputIconComputer"),
+    ("console", "inputIconConsole"),
+    ("playstation", "inputIconPlaystation"),
+    ("shield", "inputIconShield"),
+    ("steam", "inputIconSteam"),
+    ("streamer", "inputIconStreamer"),
+    ("switch", "inputIconSwitch"),
+    ("switch2", "inputIconSwitch2"),
+    ("sony", "inputIconSony"),
+    ("dvd", "inputIconDvd"),
+    ("blu-ray", "inputIconBluRay"),
+    ("disk", "inputIconDisk"),
+    ("xbox", "inputIconXbox"),
+];
 
 pub const INPUT_NAME_LIMIT: usize = 40;
 

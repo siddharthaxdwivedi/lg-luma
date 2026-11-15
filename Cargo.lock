@@ -796,7 +796,7 @@ checksum = "4050469837a6ff301cd14c1f8f24f88549e6d548f24f64e2148eb0f72cebc51f"
 
 [[package]]
 name = "luma"
-version = "2.16.2"
+version = "3.3.0"
 dependencies = [
  "alsa",
  "crossbeam-channel",
@@ -835,6 +835,7 @@ dependencies = [
 name = "luma-vector-assets"
 version = "0.1.0"
 dependencies = [
+ "image",
  "luma-vector-geometry",
  "serde",
  "serde_json",

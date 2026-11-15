@@ -26,29 +26,124 @@ const configuration = {
   hour_24: false,
   show_home_names: false,
   show_weather: true,
-  weather_location: null,
+  weather_location: {
+    name: 'Vienna',
+    region: 'Vienna',
+    country: 'Austria',
+    latitude: 48.2085,
+    longitude: 16.3721,
+  },
   hidden: [],
   input_modes: {},
   reduced_motion: false,
 };
+const sortingPreviews = process.argv.includes('--sorting');
+const widgetPreviews = process.argv.includes('--widgets');
+const weatherPreviews = process.argv.includes('--weather-styles');
+const widgetsPage = 'settings,down,down,down,down,right';
+const captures = widgetPreviews
+  ? [
+      ['home-layout-grid', 'home'],
+      ['home-layout-moved', 'home'],
+      ['home-layout-settings', widgetsPage],
+      ['home-widget-actions', `${widgetsPage},down,enter`],
+      ['home-widget-add', `${widgetsPage},enter`],
+      ['home-widget-shortcuts', `${widgetsPage},left,left,enter`],
+      ['input-settings', 'settings,down,down,right'],
+    ]
+  : weatherPreviews
+    ? [
+        ['weather-style-standard', 'home'],
+        ['weather-style-no-icon', 'home'],
+        ['weather-style-compact', 'home'],
+        [
+          'weather-style-picker',
+          `${widgetsPage},down,right,right,right,right,enter,enter,down,down,enter`,
+        ],
+      ]
+    : sortingPreviews
+      ? [
+          ['app-sorting-general', 'settings,right,down,down'],
+          ['app-sorting-picker', 'settings,right,down,down,enter'],
+          ['app-sorting-az', 'apps,down'],
+          ['app-sorting-usage', 'apps,down'],
+          ['disc-input', 'home'],
+        ]
+      : [
+          ['home', 'home'],
+          ['weather-setup', 'home,up,down'],
+          ['apps', 'apps,down'],
+          ['settings', 'settings'],
+          ['update-card', 'settings,down,down,down,down,down,right'],
+          ['inputs', 'home,up'],
+          ['clock-menu', 'home,up,right,right,enter'],
+          ['manage-apps', 'settings,down,enter'],
+          ['app-actions', 'settings,down,enter,enter'],
+        ];
 try {
-  for (const [name, script] of [
-    ['home', 'home,down'],
-    ['apps', 'apps,down'],
-    ['settings', 'settings,down'],
-    ['inputs', 'settings,down,down,down,enter,down,down,down,enter'],
-  ]) {
+  for (const [name, script] of captures) {
     // Independent state makes screenshots stable regardless of capture order.
-    await fs.writeFile(preferences, JSON.stringify(configuration));
+    await fs.writeFile(
+      preferences,
+      JSON.stringify(
+        widgetPreviews
+          ? {
+              ...configuration,
+              reduced_motion: true,
+              show_greeting: name !== 'home-widget-add',
+              greeting_position:
+                name === 'home-layout-moved' ? { column: 1, row: 3 } : { column: 0, row: 0 },
+              weather_position:
+                name === 'home-layout-moved' ? { column: 0, row: 1 } : { column: 4, row: 0 },
+            }
+          : weatherPreviews
+            ? {
+                ...configuration,
+                weather_style:
+                  name === 'weather-style-no-icon'
+                    ? 'no_icon'
+                    : name === 'weather-style-compact'
+                      ? 'compact'
+                      : 'standard',
+              }
+            : sortingPreviews
+              ? {
+                  ...configuration,
+                  app_sorting: name === 'app-sorting-az' ? 'alphabetical' : 'usage',
+                  app_launch_counts: {
+                    'org.jellyfin.webos': 42,
+                    'cdp-30': 24,
+                    'spotify-beehive': 18,
+                  },
+                  ...(name === 'disc-input'
+                    ? { input_icons: { 'com.webos.app.hdmi1': 'disk' } }
+                    : {}),
+                }
+              : name === 'weather-setup'
+                ? { ...configuration, weather_location: null }
+                : configuration,
+      ),
+    );
+    await fs.writeFile(
+      path.join(temporary, 'preferences.weather.json'),
+      JSON.stringify({
+        key: '48.2085,16.3721',
+        updated_at: Math.floor(Date.now() / 1000),
+        reading: { temperature: 14.2, code: 2, is_day: true },
+      }),
+    );
     run(binary, [
       '--assets',
       path.join(scratch, 'assets'),
       '--preferences',
       preferences,
+      '--weather-test-server',
+      'http://127.0.0.1:1',
       '--time',
       '2026-10-22T20:41:00+02:00',
       '--script',
       script,
+      ...(name === 'update-card' ? ['--test-update-version', '99.0.0'] : []),
       '--frames',
       '90',
       '--capture-scale',

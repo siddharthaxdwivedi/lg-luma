@@ -10,6 +10,51 @@ A highly optimized, deeply modified fork of Luma for the LG C1 (webOS 6).
 - **Glass UI:** Fixed straight-alpha blending and 25% milky glass tiles.
 - **Siri-Style Voice Assistant:** On-device Vosk STT, then local TV commands, then Groq (qwen/qwen3.8-27b), then espeak-ng TTS, with a dual-reactivity Voice Orb (mic + TTS audio), self-endpointing capture, live web search, conversation memory, and silent app launch.
 
+### Backgrounds
+
+Open **Settings → Background → Upload**, then scan the QR code or open the shown
+address on a phone or computer on the same network. Choose a JPEG, PNG or WebP and adjust
+its 16:9 crop before choosing **Save to TV**.
+
+The upload link works only while its TV dialog is open and focused.
+
+Enable **Rotation** beside **Upload** to cycle through backgrounds on each Luma restart and every
+15 minutes with a slow cross-fade. Rotation is off by default and leaves your manually chosen
+LG splash unchanged.
+
+Toggle **Gradient** beside **Rotation** to turn background shading on or off. It defaults to On
+and remembers your choice. Older uploads without an unshaded copy keep their full-resolution
+shaded image. This does not change LG's launch splash.
+
+### Input icons
+
+Open **Settings → Inputs**, select an input, then choose
+**Icon** to open a native picker for bundled SVG icons. Choices are **Automatic** (the default,
+using label detection), **HDMI**, **USB**, **Apple TV**, **Computer**, **Console**, **PlayStation**,
+**NVIDIA Shield**, **Steam**, **Streaming device**, **Nintendo Switch**, **Nintendo Switch 2**,
+**Sony**, **DVD**, **Blu-ray**, **Disk**, and **Xbox**.
+
+An explicit icon choice is saved separately for each input and persists across restarts.
+Choose **Automatic** to clear that input's override and restore label-based icon detection.
+
+### Recent app switching
+
+Hold **Back** for 0.6 seconds from any page to open Recent apps. A short press never opens it,
+including on Home.
+
+- **Left / Right**, the pointer, or the scroll wheel browses recent apps and inputs.
+- **OK** or a pointer click opens the selected app or input.
+- **Up** closes the selected app and removes its card.
+- **Back** dismisses the switcher and restores the previous page and focus.
+
+These shortcuts work while Luma is focused. From another app, return to Luma first.
+
+### Shortcut tiles
+
+Shortcut tiles sit on Home like apps but send a web request when selected, for example to a Home
+Assistant webhook. Open **Settings → Widgets → Shortcuts → Configure** and scan
+the QR code.
+
 ## Voice Assistant Setup
 
 The Voice Assistant uses Groq's qwen/qwen3.8-27b model. To enable it, install your API key on the TV:
@@ -188,8 +233,8 @@ See `optimize-report.md` → "2026-11-11 - Early Home mount investigation" for f
 ### SSH
 
 ```sh
-scp com.ecklf.luma_2.16.2_arm.ipk root@TV_IP:/tmp/
-ssh root@TV_IP "luna-send -n 1 'luna://com.webos.appInstallClient/dev/install' '{\"ipkUrl\":\"file:///tmp/com.ecklf.luma_2.16.2_arm.ipk\",\"subscribe\":true}'"
+scp com.ecklf.luma_3.3.0_arm.ipk root@TV_IP:/tmp/
+ssh root@TV_IP "luna-send -n 1 'luna://com.webos.appInstallClient/dev/install' '{\"ipkUrl\":\"file:///tmp/com.ecklf.luma_3.3.0_arm.ipk\",\"subscribe\":true}'"
 ssh root@TV_IP "luna-send -n 1 'luna://com.webos.applicationManager/launch' '{\"id\":\"com.ecklf.luma\"}'"
 ```
 
