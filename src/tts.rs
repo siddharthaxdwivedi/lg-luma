@@ -127,16 +127,17 @@ fn tts_thread(
                     is_speaking.store(true, Ordering::Relaxed);
                     let _ = evt_tx.send(TtsEvent::Started);
                     match espeak.synth(&text) {
-                        Ok((samples, _rate)) => {
-                            let rms_val = compute_rms(&samples);
-                            let rms_bits = rms_val.to_bits() as i32;
-                            rms.store(rms_bits, Ordering::Relaxed);
-                            tts_rms_atomic.store(rms_bits, Ordering::Relaxed);
+                        Ok((samples, rate)) => {
+                            play_pcm(&samples, rate, &tts_rms_atomic);
                         }
                         Err(_e) => {
                             let _ = evt_tx.send(TtsEvent::Error);
                         }
                     }
+                    is_speaking.store(false, Ordering::Relaxed);
+                    rms.store(0, Ordering::Relaxed);
+                    tts_rms_atomic.store(0, Ordering::Relaxed);
+                    let _ = evt_tx.send(TtsEvent::Finished);
                 }
                 TtsCommand::Stop => {
                     is_speaking.store(false, Ordering::Relaxed);
@@ -144,15 +145,6 @@ fn tts_thread(
                     tts_rms_atomic.store(0, Ordering::Relaxed);
                 }
             }
-        }
-
-        // Synthesis is synchronous (no persistent playback state), so the
-        // speaking window ends as soon as the utterance has been rendered.
-        if is_speaking.load(Ordering::Relaxed) {
-            is_speaking.store(false, Ordering::Relaxed);
-            rms.store(0, Ordering::Relaxed);
-            tts_rms_atomic.store(0, Ordering::Relaxed);
-            let _ = evt_tx.send(TtsEvent::Finished);
         }
 
         thread::sleep(Duration::from_millis(10));
@@ -177,6 +169,58 @@ fn espeak_data_dir() -> PathBuf {
         }
     }
     std::env::temp_dir().join("luma-espeak-ng-data")
+}
+
+/// Play synthesized 16-bit mono PCM through the TV's default output. espeak-ng
+/// is a synthesis-only library, so the samples must be written to ALSA. RMS is
+/// published per chunk so the Voice Orb pulses with the actual speech.
+fn play_pcm(samples: &[i16], rate: u32, tts_rms_atomic: &AtomicI32) {
+    use alsa::{
+        Direction, ValueOr,
+        pcm::{Access, Format, HwParams, PCM},
+    };
+    let pcm = match PCM::new("default", Direction::Playback, false) {
+        Ok(pcm) => pcm,
+        Err(error) => {
+            eprintln!("Voice Assistant TTS playback: {error}");
+            return;
+        }
+    };
+    let hwp = match HwParams::any(&pcm) {
+        Ok(hwp) => hwp,
+        Err(error) => {
+            eprintln!("Voice Assistant TTS playback params: {error}");
+            return;
+        }
+    };
+    let configured = (|| -> Result<(), alsa::Error> {
+        hwp.set_access(Access::RWInterleaved)?;
+        hwp.set_format(Format::s16())?;
+        hwp.set_channels(1)?;
+        hwp.set_rate_near(rate, ValueOr::Nearest)?;
+        pcm.hw_params(&hwp)?;
+        pcm.prepare()?;
+        Ok(())
+    })();
+    if let Err(error) = configured {
+        eprintln!("Voice Assistant TTS playback setup: {error}");
+        return;
+    }
+    let io = match pcm.io_i16() {
+        Ok(io) => io,
+        Err(error) => {
+            eprintln!("Voice Assistant TTS playback io: {error}");
+            return;
+        }
+    };
+    for chunk in samples.chunks(1024) {
+        tts_rms_atomic.store(compute_rms(chunk).to_bits() as i32, Ordering::Relaxed);
+        if io.writei(chunk).is_err() {
+            break;
+        }
+    }
+    let _ = pcm.drain();
+    tts_rms_atomic.store(0, Ordering::Relaxed);
 }
 
 /// Compute the RMS of 16-bit mono PCM samples, normalized to 0.0-1.0.
