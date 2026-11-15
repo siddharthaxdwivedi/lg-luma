@@ -1,16 +1,22 @@
 //! Endpointing for one spoken command.
 //!
-//! The microphone opens with 500 ms of room-noise calibration, capture starts
-//! only when the level jumps clear of that noise floor, and the utterance ends
-//! after 1.5 s of continuous silence. Keeping this as a pure state machine
-//! makes the thresholds testable without a microphone or a TV.
+//! The microphone opens with a short settle window, because USB capture devices
+//! emit a loud power-on transient whose decay would otherwise be mistaken for
+//! the room. Then it samples room noise, capture starts only when the level
+//! jumps clear of that noise floor, and the utterance ends after 1.5 s of
+//! continuous silence. Keeping this as a pure state machine makes the thresholds
+//! testable without a microphone or a TV.
 
-/// Chunks of room noise sampled before listening for speech (500 ms at 100 ms).
-const CALIBRATION_CHUNKS: usize = 5;
+/// Chunks dropped right after the microphone opens. A USB capture device decays
+/// from a loud transient back to room noise over about a second, so feed those
+/// chunks to the gate before it starts listening.
+const SETTLE_CHUNKS: usize = 6;
+/// Chunks of room noise sampled before listening for speech (800 ms at 100 ms).
+const CALIBRATION_CHUNKS: usize = 8;
 /// Ignore bursts shorter than this (300 ms at 100 ms).
 const MIN_SPEECH_CHUNKS: usize = 3;
 /// Absolute RMS margin above the noise floor that counts as speech.
-const SPEECH_MARGIN: f32 = 0.010;
+const SPEECH_MARGIN: f32 = 0.006;
 /// Relative RMS margin above the noise floor that counts as speech.
 const SPEECH_RATIO: f32 = 2.5;
 /// Relative RMS margin below the noise floor that counts as silence.
@@ -38,8 +44,9 @@ pub enum GateEvent {
 /// Noise floor plus speech/silence hysteresis for a single utterance.
 pub struct Gate {
     endpoint_chunks: usize,
+    settle: usize,
     calibrating: usize,
-    calibration_total: f32,
+    calibration_min: f32,
     floor: f32,
     capturing: bool,
     speech_chunks: usize,
@@ -52,8 +59,9 @@ impl Gate {
         let chunk_ms = chunk_ms.max(1.0);
         let mut gate = Self {
             endpoint_chunks: (ENDPOINT_MS / chunk_ms).ceil() as usize,
+            settle: 0,
             calibrating: 0,
-            calibration_total: 0.0,
+            calibration_min: f32::INFINITY,
             floor: 0.0,
             capturing: false,
             speech_chunks: 0,
@@ -65,8 +73,9 @@ impl Gate {
 
     /// Begin a new utterance: re-calibrate and forget the previous capture.
     pub fn reset(&mut self) {
+        self.settle = SETTLE_CHUNKS;
         self.calibrating = CALIBRATION_CHUNKS;
-        self.calibration_total = 0.0;
+        self.calibration_min = f32::INFINITY;
         self.floor = 0.0;
         self.capturing = false;
         self.speech_chunks = 0;
@@ -88,11 +97,16 @@ impl Gate {
     /// Feed one chunk's RMS level. `full` forces the end once the buffer is at
     /// its sample limit.
     pub fn push(&mut self, level: f32, full: bool) -> GateEvent {
+        if self.settle > 0 {
+            self.settle -= 1;
+            return GateEvent::Ignore;
+        }
+
         if self.calibrating > 0 {
-            self.calibration_total += level;
+            self.calibration_min = self.calibration_min.min(level);
             self.calibrating -= 1;
             if self.calibrating == 0 {
-                self.floor = self.calibration_total / CALIBRATION_CHUNKS as f32;
+                self.floor = self.calibration_min;
             }
             return GateEvent::Ignore;
         }
@@ -137,6 +151,9 @@ mod tests {
 
     fn calibrated(noise: f32) -> Gate {
         let mut gate = Gate::new(100.0);
+        for _ in 0..SETTLE_CHUNKS {
+            assert_eq!(gate.push(0.9, false), GateEvent::Ignore);
+        }
         for _ in 0..CALIBRATION_CHUNKS {
             assert_eq!(gate.push(noise, false), GateEvent::Ignore);
         }
