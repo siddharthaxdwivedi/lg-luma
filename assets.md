@@ -118,7 +118,7 @@ small/large webOS installation icons.
 Speech recognition: [whisper.cpp](https://github.com/ggerganov/whisper.cpp) (MIT) with the OpenAI
 Whisper `base.en` weights (MIT), and Silero VAD (MIT) via
 [ggml-org/whisper-vad](https://huggingface.co/ggml-org/whisper-vad). Models are downloaded at
-packaging time, not stored here. `assets/commands.gbnf` is original Luma text.
+packaging time, not stored here.
 
 Weather data: [Open-Meteo](https://open-meteo.com/), [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
 

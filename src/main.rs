@@ -904,7 +904,6 @@ fn run() -> Result<(), String> {
     let stt_handle = stt::SttHandle::spawn(stt::SttConfig {
         model_path: stt_asset("ggml-base.en.bin"),
         vad_model_path: stt_asset("ggml-silero-v5.1.2.bin"),
-        grammar_path: stt_asset("commands.gbnf"),
         tts_speaking: tts_handle.as_ref().map(tts::TtsHandle::speaking_flag),
         ..stt::SttConfig::default()
     })

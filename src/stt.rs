@@ -1,16 +1,15 @@
 //! Local Speech-to-Text using whisper.cpp.
 //!
-//! A dedicated thread owns the microphone. Opening the orb starts a 500 ms
-//! noise-floor calibration, capture begins only when the level clears that
-//! floor, and the utterance ends after 1.5 s of silence (see `gate.rs`). The
-//! clip is then trimmed by Silero VAD and decoded in command mode on two
+//! A dedicated thread owns the microphone. Opening the orb lets the capture
+//! device settle, samples the room noise, starts capture only when the level
+//! clears that floor, and ends the utterance after 1.5 s of silence (see
+//! `gate.rs`). The clip is then trimmed by Silero VAD and transcribed on two
 //! threads, so the TV never runs Whisper on silence and never saturates all
 //! four cores.
 
 mod commands;
 mod engine;
 mod gate;
-mod grammar;
 
 pub use commands::resolve;
 use engine::Engine;
@@ -50,7 +49,6 @@ const SAMPLE_RATE: f32 = 16_000.0;
 pub struct SttConfig {
     pub model_path: String,
     pub vad_model_path: String,
-    pub grammar_path: String,
     pub sample_rate: f32,
     pub chunk_frames: usize,
     /// Decoding threads. Capped at 2 so the TV keeps a core free.
@@ -64,7 +62,6 @@ impl Default for SttConfig {
         Self {
             model_path: asset_path("ggml-base.en.bin"),
             vad_model_path: asset_path("ggml-silero-v5.1.2.bin"),
-            grammar_path: asset_path("commands.gbnf"),
             sample_rate: SAMPLE_RATE,
             chunk_frames: 1600,
             n_threads: 2,
@@ -149,11 +146,9 @@ fn stt_thread(
     rms: Arc<AtomicI32>,
     is_listening: Arc<AtomicBool>,
 ) {
-    let grammar = load_grammar(&config.grammar_path);
     let mut engine = match Engine::load(
         &config.model_path,
         Some(&config.vad_model_path),
-        grammar.as_ref(),
         config.n_threads,
     ) {
         Ok(engine) => engine,
@@ -275,23 +270,6 @@ fn stt_thread(
                 finish(&mut engine, &samples, &evt_tx);
                 samples.clear();
             }
-        }
-    }
-}
-
-fn load_grammar(path: &str) -> Option<grammar::Grammar> {
-    let source = match std::fs::read_to_string(path) {
-        Ok(source) => source,
-        Err(error) => {
-            eprintln!("Luma STT: no command grammar at {path}: {error}");
-            return None;
-        }
-    };
-    match grammar::parse(&source) {
-        Ok(grammar) => Some(grammar),
-        Err(error) => {
-            eprintln!("Luma STT: ignoring command grammar {path}: {error}");
-            None
         }
     }
 }

@@ -1,10 +1,9 @@
-//! Minimal FFI layer over whisper.cpp for command-mode transcription.
+//! Minimal FFI layer over whisper.cpp for transcription.
 //!
-//! `whisper-rs`'s safe wrapper cannot express command mode: its
-//! `FullParams::set_grammar` casts a flat element slice into
-//! `const whisper_grammar_element **`, which whisper.cpp dereferences as one
-//! pointer per rule, so any grammar would crash the TV. The raw bindings are
-//! used here so the grammar, Silero VAD and thread limits stay explicit.
+//! `whisper-rs`'s safe wrapper does not expose the Silero VAD controls or the
+//! thread clamp used here, so the raw bindings are called directly. Decoding is
+//! left unconstrained: the transcript is matched against local commands
+//! afterwards, and anything that is not a command goes to the cloud assistant.
 
 use std::ffi::{CStr, CString};
 use std::os::raw::c_int;
@@ -12,34 +11,26 @@ use std::ptr;
 
 use whisper_rs_sys as sys;
 
-use super::grammar::{Element, ElementKind, Grammar};
-
 /// whisper.cpp works at 16 kHz mono.
 pub const SAMPLE_RATE: usize = 16_000;
 
 /// Shortest clip worth decoding (~0.3 s).
 const MIN_SAMPLES: usize = SAMPLE_RATE / 3;
 
-/// A loaded whisper.cpp context plus the grammar it should decode with.
+/// A loaded whisper.cpp context and its optional Silero VAD model.
 pub struct Engine {
     ctx: *mut sys::whisper_context,
     state: *mut sys::whisper_state,
     vad: *mut sys::whisper_vad_context,
     vad_params: sys::whisper_vad_params,
-    rules: Vec<Vec<sys::whisper_grammar_element>>,
     language: CString,
     n_threads: c_int,
 }
 
 impl Engine {
-    /// Load a GGML model, the optional Silero VAD model, and the optional
-    /// command grammar. `n_threads` is capped so the TV keeps a core free.
-    pub fn load(
-        model: &str,
-        vad_model: Option<&str>,
-        grammar: Option<&Grammar>,
-        n_threads: c_int,
-    ) -> Result<Self, String> {
+    /// Load a GGML model and the optional Silero VAD model. `n_threads` is
+    /// capped so the TV keeps a core free.
+    pub fn load(model: &str, vad_model: Option<&str>, n_threads: c_int) -> Result<Self, String> {
         let model = CString::new(model).map_err(|_| "model path contains NUL".to_string())?;
         let language = CString::new("en").map_err(|_| "language contains NUL".to_string())?;
 
@@ -83,7 +74,6 @@ impl Engine {
             state,
             vad,
             vad_params,
-            rules: grammar.map(compile).unwrap_or_default(),
             language,
             n_threads: n_threads.clamp(1, 2),
         })
@@ -130,27 +120,6 @@ impl Engine {
         params.print_timestamps = false;
         params.language = self.language.as_ptr();
 
-        // The pointer array must outlive `whisper_full_with_state`.
-        let mut rules: Vec<*const sys::whisper_grammar_element> =
-            self.rules.iter().map(|rule| rule.as_ptr()).collect();
-        if !rules.is_empty() {
-            params.grammar_rules = rules.as_mut_ptr();
-            params.n_grammar_rules = rules.len();
-            params.i_start_rule = 0;
-        }
-
-        let text = self.run_decode(&audio, params)?;
-        if !text.is_empty() || rules.is_empty() {
-            return Ok(text);
-        }
-
-        // A grammar that matches nothing in the clip yields no tokens at all.
-        // Decoding again without it keeps "open youtube" working while the
-        // grammar still biases every clip it does match.
-        eprintln!("Luma STT: command grammar produced no tokens, decoding without it");
-        params.grammar_rules = ptr::null_mut();
-        params.n_grammar_rules = 0;
-        params.i_start_rule = 0;
         self.run_decode(&audio, params)
     }
 
@@ -187,10 +156,7 @@ impl Engine {
             text.push_str(&unsafe { CStr::from_ptr(piece) }.to_string_lossy());
         }
         let text = text.trim().to_string();
-        eprintln!(
-            "Luma STT: decode status={status} segments={count} grammar={} text={text:?}",
-            !params.grammar_rules.is_null()
-        );
+        eprintln!("Luma STT: decode status={status} segments={count} text={text:?}");
         Ok(text)
     }
 
@@ -247,43 +213,5 @@ impl Drop for Engine {
                 sys::whisper_free(self.ctx);
             }
         }
-    }
-}
-
-/// Convert parsed rules into the flat, `END`-terminated element lists that
-/// whisper.cpp's grammar engine expects.
-fn compile(grammar: &Grammar) -> Vec<Vec<sys::whisper_grammar_element>> {
-    grammar
-        .rules
-        .iter()
-        .map(|rule| {
-            let mut converted: Vec<sys::whisper_grammar_element> =
-                rule.iter().map(to_c_type).collect();
-            if converted.last().map(|element| element.type_)
-                != Some(sys::whisper_gretype_WHISPER_GRETYPE_END)
-            {
-                converted.push(sys::whisper_grammar_element {
-                    type_: sys::whisper_gretype_WHISPER_GRETYPE_END,
-                    value: 0,
-                });
-            }
-            converted
-        })
-        .collect()
-}
-
-fn to_c_type(element: &Element) -> sys::whisper_grammar_element {
-    let type_ = match element.kind {
-        ElementKind::End => sys::whisper_gretype_WHISPER_GRETYPE_END,
-        ElementKind::Alt => sys::whisper_gretype_WHISPER_GRETYPE_ALT,
-        ElementKind::RuleRef => sys::whisper_gretype_WHISPER_GRETYPE_RULE_REF,
-        ElementKind::Char => sys::whisper_gretype_WHISPER_GRETYPE_CHAR,
-        ElementKind::CharNot => sys::whisper_gretype_WHISPER_GRETYPE_CHAR_NOT,
-        ElementKind::CharRangeUpper => sys::whisper_gretype_WHISPER_GRETYPE_CHAR_RNG_UPPER,
-        ElementKind::CharAlt => sys::whisper_gretype_WHISPER_GRETYPE_CHAR_ALT,
-    };
-    sys::whisper_grammar_element {
-        type_,
-        value: element.value,
     }
 }
