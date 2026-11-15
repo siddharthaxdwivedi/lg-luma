@@ -18,6 +18,14 @@ set -eu
 ROOT=$(dirname "$(dirname "$(realpath "$0")")")
 : "${WEBOS_NDK:?Set WEBOS_NDK to the extracted webOS native toolchain}"
 WEBOS_NDK=$(realpath "$WEBOS_NDK")
+# Autotools (OpenFst, Kaldi) look the cross toolchain up by name on PATH, and a
+# relocatable SDK does not put it there itself, so add it. Capture the host C
+# compiler first: OpenBLAS builds and runs a host helper with HOSTCC, which the
+# SDK directory must never shadow.
+HOST_CC=$(command -v gcc || command -v cc)
+[ -n "$HOST_CC" ] || { printf '%s\n' "No host C compiler for OpenBLAS" >&2; exit 1; }
+PATH="$WEBOS_NDK/bin:$PATH"
+export PATH
 BIN_PREFIX="$WEBOS_NDK/bin/arm-webos-linux-gnueabi-"
 CC="${BIN_PREFIX}gcc"
 CXX="${BIN_PREFIX}g++"
@@ -70,7 +78,7 @@ if [ ! -f "$PREFIX/lib/libopenblas.a" ]; then
   fetch_sha https://github.com/xianyi/OpenBLAS "$SRC/OpenBLAS" "$OPENBLAS_SHA"
   # ARM_SOFTFP_ABI=1 makes OpenBLAS add -mfloat-abi=softfp itself.
   make -C "$SRC/OpenBLAS" -j"$JOBS" TARGET=ARMV7 ONLY_CBLAS=1 ARM_SOFTFP_ABI=1 \
-    USE_THREAD=0 NUM_THREADS=1 AR="$AR" CC="$CC" HOSTCC=gcc
+    USE_THREAD=0 NUM_THREADS=1 AR="$AR" CC="$CC" HOSTCC="$HOST_CC"
   make -C "$SRC/OpenBLAS" install PREFIX="$PREFIX"
 fi
 
