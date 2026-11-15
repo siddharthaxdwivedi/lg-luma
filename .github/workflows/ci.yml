@@ -100,15 +100,6 @@ jobs:
           cargo test --locked --workspace --all-features --exclude luma
       - name: Generate native assets
         run: pnpm assets
-      - name: Download Whisper STT assets
-        run: |
-          mkdir -p .build/assets
-          curl --fail --location --retry 3 --output .build/assets/ggml-base.en.bin \
-            https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
-          test -s .build/assets/ggml-base.en.bin
-          curl --fail --location --retry 3 --output .build/assets/ggml-silero-v5.1.2.bin \
-            https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
-          test -s .build/assets/ggml-silero-v5.1.2.bin
       - name: Build shared desktop preview
         run: cargo build --locked --package luma --features voice-assistant
       - name: Bundle shared smoke inputs
@@ -194,7 +185,7 @@ jobs:
           targets: armv7-unknown-linux-gnueabi
       - uses: Swatinem/rust-cache@v2
         with:
-          key: webos-${{ hashFiles('tools/build-webos.sh', 'tools/setup-webos-sdk.mjs', 'tools/webos-runtime.mjs') }}
+          key: webos-${{ hashFiles('tools/build-webos.sh', 'tools/setup-webos-sdk.mjs', 'tools/webos-runtime.mjs', 'tools/webos-cmake-toolchain.cmake') }}
       - name: Cache Cargo registry and git
         uses: actions/cache@v4
         with:
@@ -204,13 +195,6 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-
-      - name: Cache Cargo target directory
-        uses: actions/cache@v4
-        with:
-          path: target
-          key: ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}-${{ github.sha }}
-          restore-keys: |
-            ${{ runner.os }}-cargo-target-${{ hashFiles('**/Cargo.lock') }}-
       - name: Install cross-build dependencies
         run: |
           sudo apt-get -o Acquire::Retries=3 update
@@ -220,10 +204,46 @@ jobs:
           name: smoke-inputs
       - name: Restore generated native assets
         run: tar -xzf smoke-inputs.tar.gz .build/assets
+      - name: Cache Whisper models
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/assets/ggml-base.en.bin
+            .build/assets/ggml-silero-v5.1.2.bin
+          key: whisper-models-base-en-silero-5.1.2-v1
+      - name: Download Whisper STT assets
+        run: |
+          mkdir -p .build/assets
+          if [ ! -s .build/assets/ggml-base.en.bin ]; then
+            curl --fail --location --retry 3 --output .build/assets/ggml-base.en.bin \
+              https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin
+          fi
+          test -s .build/assets/ggml-base.en.bin
+          if [ ! -s .build/assets/ggml-silero-v5.1.2.bin ]; then
+            curl --fail --location --retry 3 --output .build/assets/ggml-silero-v5.1.2.bin \
+              https://huggingface.co/ggml-org/whisper-vad/resolve/main/ggml-silero-v5.1.2.bin
+          fi
+          test -s .build/assets/ggml-silero-v5.1.2.bin
+      - name: Cache webOS SDK
+        uses: actions/cache@v4
+        with:
+          path: .build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot
+          key: webos-sdk-b17b4cc-v1
       - name: Set up the webOS SDK
         run: pnpm sdk
+      - name: Prepare ARM OpenSSL cache directory
+        run: sudo mkdir -p /usr/local/ssl-arm && sudo chown -R "$(id -u):$(id -g)" /usr/local/ssl-arm
+      - name: Cache ARM OpenSSL
+        uses: actions/cache@v4
+        with:
+          path: /usr/local/ssl-arm
+          key: openssl-arm-3.0.13-v1
       - name: Build OpenSSL for ARM using webOS SDK cross-compiler
         run: |
+          if [ -f /usr/local/ssl-arm/lib/libssl.so ]; then
+            echo "Using cached ARM OpenSSL 3.0.13"
+            exit 0
+          fi
           WEBOS_NDK="$GITHUB_WORKSPACE/.build/toolchain/arm-webos-linux-gnueabi_sdk-buildroot"
           cd /tmp
           wget -q https://www.openssl.org/source/openssl-3.0.13.tar.gz
@@ -231,8 +251,7 @@ jobs:
           cd openssl-3.0.13
           ./Configure linux-armv4 --prefix=/usr/local/ssl-arm --cross-compile-prefix=$WEBOS_NDK/bin/arm-webos-linux-gnueabi-
           make -j$(nproc)
-          sudo make install_sw
-          sudo ldconfig
+          make install_sw
       - name: Set OpenSSL environment for ARM build
         run: |
           echo "OPENSSL_DIR=/usr/local/ssl-arm" >> $GITHUB_ENV
