@@ -5,6 +5,8 @@
 //! dual-reactivity pulse.
 
 #[cfg(feature = "voice-assistant")]
+use std::path::PathBuf;
+#[cfg(feature = "voice-assistant")]
 use std::sync::Arc;
 #[cfg(feature = "voice-assistant")]
 use std::sync::atomic::{AtomicBool, AtomicI32, Ordering};
@@ -101,10 +103,14 @@ fn tts_thread(
     is_speaking: Arc<AtomicBool>,
     tts_rms_atomic: Arc<AtomicI32>,
 ) {
-    // Initialize espeak-ng for English (also selects the voice).
-    let mut espeak = match EspeakNg::new("en") {
+    // espeak-ng reads dictionaries and phoneme tables from disk. webOS ships no
+    // system copy, so extract the bundled English data into a writable
+    // directory once, then initialise from there.
+    let data_dir = espeak_data_dir();
+    let mut espeak = match EspeakNg::with_data_dir("en", &data_dir) {
         Ok(e) => e,
-        Err(_e) => {
+        Err(error) => {
+            eprintln!("Voice Assistant TTS data: {error}");
             let _ = evt_tx.send(TtsEvent::Error);
             return;
         }
@@ -151,6 +157,26 @@ fn tts_thread(
 
         thread::sleep(Duration::from_millis(10));
     }
+}
+
+/// Writable directory holding the bundled espeak-ng data. Extracted once; the
+/// crate ships no data and webOS has no system espeak-ng-data.
+fn espeak_data_dir() -> PathBuf {
+    let candidates = [
+        PathBuf::from("/var/lib/luma-home/espeak-ng-data"),
+        std::env::temp_dir().join("luma-espeak-ng-data"),
+    ];
+    for directory in candidates {
+        if directory.join("en_dict").exists() {
+            return directory;
+        }
+        if std::fs::create_dir_all(&directory).is_ok()
+            && espeak_ng::install_bundled_language(&directory, "en").is_ok()
+        {
+            return directory;
+        }
+    }
+    std::env::temp_dir().join("luma-espeak-ng-data")
 }
 
 /// Compute the RMS of 16-bit mono PCM samples, normalized to 0.0-1.0.
