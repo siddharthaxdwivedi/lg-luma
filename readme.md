@@ -8,11 +8,11 @@ A highly optimized, deeply modified fork of Luma for the LG C1 (webOS 6).
 - **Parallax Wallpapers:** 4K backgrounds shift based on app focus.
 - **Reactive Voice Orb:** Dark polished sphere with a drifting iridescent seam, low on the screen, reacting to live microphone and TTS levels (with a simulated envelope as a fallback).
 - **Glass UI:** Fixed straight-alpha blending and 25% milky glass tiles.
-- **Siri-Style Voice Assistant:** On-device Vosk STT, then local TV commands, then Groq (llama-3.3-70b-versatile), then espeak-ng TTS, with a dual-reactivity Voice Orb (mic + TTS audio), self-endpointing capture, live web search, conversation memory, and silent app launch.
+- **Siri-Style Voice Assistant:** On-device Vosk STT, then local TV commands, then Groq (qwen/qwen3.8-27b), then espeak-ng TTS, with a dual-reactivity Voice Orb (mic + TTS audio), self-endpointing capture, live web search, conversation memory, and silent app launch.
 
 ## Voice Assistant Setup
 
-The Voice Assistant uses Groq's llama-3.3-70b-versatile model. To enable it, install your API key on the TV:
+The Voice Assistant uses Groq's qwen/qwen3.8-27b model. To enable it, install your API key on the TV:
 
 ```bash
 ssh -i pwnLG/pwn_ed25519 root@192.168.1.126 "echo 'YOUR_KEY' > /var/lib/luma-home/.groq_key && chmod 600 /var/lib/luma-home/.groq_key"

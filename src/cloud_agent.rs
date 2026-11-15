@@ -1,6 +1,6 @@
 //! Cloud Brain — Groq integration with Search & Conversation Memory.
 //!
-//! Sends the user's transcript to Groq's OpenAI-compatible API (model: llama-3.3-70b-versatile)
+//! Sends the user's transcript to Groq's OpenAI-compatible API (model: qwen/qwen3.8-27b)
 //! with conversation history and installed app context. Supports three actions:
 //! SPEAK, LAUNCH, SEARCH. SEARCH triggers a web search + second model call.
 
@@ -14,7 +14,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 
 const GROQ_ENDPOINT: &str = "https://api.groq.com/openai/v1/chat/completions";
-const GROQ_MODEL: &str = "llama-3.3-70b-versatile";
+const GROQ_MODEL: &str = "qwen/qwen3.8-27b";
 const REQUEST_TIMEOUT: Duration = Duration::from_secs(15);
 const SEARCH_TIMEOUT: Duration = Duration::from_secs(5);
 const CONVERSATION_TTL: Duration = Duration::from_secs(60);
