@@ -340,6 +340,7 @@ fn open_capture(device: &str, rate: u32) -> Result<alsa::pcm::PCM, String> {
         .map_err(|e| format!("hw_params failed: {e}"))?;
     pcm.prepare().map_err(|e| format!("prepare failed: {e}"))?;
     pcm.start().map_err(|e| format!("start failed: {e}"))?;
+    drop(hwp);
     Ok(pcm)
 }
 
