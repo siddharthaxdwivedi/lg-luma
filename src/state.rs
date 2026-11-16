@@ -2251,10 +2251,6 @@ impl State {
                                 Target::WallpaperCycle
                             } else if index == 1 {
                                 Target::WallpaperGradient
-                            } else if index == 0 {
-                                // The cinematic pill sits at the content edge, directly above
-                                // the first gallery card.
-                                Target::WallpaperCinematic
                             } else if index < 3 {
                                 Target::UploadWallpaper
                             } else {
@@ -2279,8 +2275,8 @@ impl State {
             if self.focus == Target::UploadWallpaper {
                 match direction {
                     Direction::Down => self.focus(Target::Background(0), controls),
-                    Direction::Up => self.focus(Target::Nav(2), controls),
-                    Direction::Left => self.focus(Target::WallpaperCinematic, controls),
+                    Direction::Up => self.focus(Target::SettingsMenu, controls),
+                    Direction::Left => self.focus(Target::Sidebar(1), controls),
                     Direction::Right => self.focus(Target::WallpaperGradient, controls),
                 }
                 return vec![];
@@ -2294,15 +2290,6 @@ impl State {
                         Target::Background(1.min(self.background_count().saturating_sub(1))),
                         controls,
                     ),
-                }
-                return vec![];
-            }
-            if self.focus == Target::WallpaperCinematic {
-                match direction {
-                    Direction::Right => self.focus(Target::UploadWallpaper, controls),
-                    Direction::Left => self.focus(Target::Sidebar(1), controls),
-                    Direction::Up => self.focus(Target::Nav(2), controls),
-                    Direction::Down => self.focus(Target::Background(0), controls),
                 }
                 return vec![];
             }
