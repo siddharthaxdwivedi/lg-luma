@@ -1068,7 +1068,12 @@ fn run() -> Result<(), String> {
         &assets,
         options.time.unwrap_or_else(OffsetDateTime::now_utc),
     );
+    // Instrumentation for the headless voice test, gated by LUMA_VOICE_DEBUG.
+    let voice_debug = std::env::var("LUMA_VOICE_DEBUG").is_ok();
+    let mut frame: u64 = 0;
+
     while running {
+        frame += 1;
         // Any event the previous wait returned means the screen is active again.
         if queued_event.is_some() {
             idle_waits = 0;
@@ -1129,6 +1134,9 @@ fn run() -> Result<(), String> {
                             state.dirty = true;
                         }
                         stt::SttEvent::Final(text) => {
+                            if voice_debug {
+                                eprintln!("VOICE transcript={text:?}");
+                            }
                             if text.trim().is_empty() {
                                 state.voice_assistant_text = None;
                                 state.dirty = true;
@@ -1239,6 +1247,9 @@ fn run() -> Result<(), String> {
                         state.dirty = true;
                     }
                     VoiceUiCmd::Launch(app_id) => {
+                        if voice_debug {
+                            eprintln!("VOICE launch path=platform zoom=true id={app_id}");
+                        }
                         launch_app(&mut state, &platform, &app_id);
                     }
                 }
@@ -1249,6 +1260,12 @@ fn run() -> Result<(), String> {
                 while let Ok(cmd) = tts_cmd_rx.try_recv() {
                     match cmd {
                         tts::TtsCommand::Speak(text) => {
+                            if voice_debug {
+                                eprintln!(
+                                    "VOICE tts sink submit chars={} text={text:?}",
+                                    text.len()
+                                );
+                            }
                             handle.speak(text);
                         }
                         tts::TtsCommand::Stop => {
@@ -1257,6 +1274,26 @@ fn run() -> Result<(), String> {
                     }
                 }
             }
+        }
+
+        // Per-frame voice telemetry for the headless test: proves the assistant
+        // status channel survives across frames instead of dying with the receiver
+        // of the frame that spawned the task, and that the microphone level moves.
+        if voice_debug && state.voice_assistant_text.is_some() {
+            let mic_rms = state
+                .stt_rms_atomic
+                .load(std::sync::atomic::Ordering::Relaxed);
+            let tts_rms = state
+                .tts_rms_atomic
+                .load(std::sync::atomic::Ordering::Relaxed);
+            eprintln!(
+                "VOICE frame={frame} status={:?} active={} time={:.2} mic_rms={:.4} tts_rms={:.4}",
+                state.voice_assistant_text,
+                state.voice_active,
+                state.voice_time,
+                f32::from_bits(mic_rms as u32),
+                f32::from_bits(tts_rms as u32),
+            );
         }
 
         // Ken Burns needs a live clock and a visible window. Previews pinned with --time or

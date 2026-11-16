@@ -213,12 +213,16 @@ fn play_pcm(samples: &[i16], rate: u32, tts_rms_atomic: &AtomicI32) {
             return;
         }
     };
+    let mut written = 0usize;
     for chunk in samples.chunks(1024) {
         tts_rms_atomic.store(compute_rms(chunk).to_bits() as i32, Ordering::Relaxed);
         if io.writei(chunk).is_err() {
+            eprintln!("VOICE tts sink write failed after={written} frames");
             break;
         }
+        written += chunk.len();
     }
+    eprintln!("VOICE tts sink played frames={written} rate={rate}");
     let _ = pcm.drain();
     tts_rms_atomic.store(0, Ordering::Relaxed);
 }
