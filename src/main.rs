@@ -74,6 +74,8 @@ use time::OffsetDateTime;
 /// UI commands sent from async Voice Assistant tasks to the main thread.
 enum VoiceUiCmd {
     SetText(String),
+    /// Launch an app through the platform, from the SDL thread that owns it.
+    Launch(String),
 }
 
 #[derive(Default)]
@@ -915,8 +917,13 @@ fn run() -> Result<(), String> {
         state.stt_rms_atomic = handle.rms.clone();
     }
 
-    // Voice Assistant: channel for async tasks to send TTS commands to the main thread.
+    // Voice Assistant: channels for async tasks to reach the main thread. Both are
+    // created out here, not per frame: a reply that lands after the frame that
+    // spawned the task would otherwise be dropped with the receiver.
+    #[cfg(feature = "voice-assistant")]
     let (tts_cmd_tx, tts_cmd_rx) = crossbeam_channel::bounded(8);
+    #[cfg(feature = "voice-assistant")]
+    let (ui_tx, ui_rx) = crossbeam_channel::bounded(8);
 
     // Lifecycle as Home: sam sends "relaunch" (bring the running Luma to the front) instead of
     // killing and restarting it, and "close" when it wants Luma to exit. `end_registration`
@@ -1104,147 +1111,149 @@ fn run() -> Result<(), String> {
             }
         }
 
-        // Voice Assistant: channel for async tasks to send UI updates to the main thread.
-        let (ui_tx, ui_rx) = crossbeam_channel::bounded(8);
-
-        // Voice Assistant: poll STT events and drive the assistant pipeline.
-        if let Some(handle) = &stt_handle {
-            while let Some(event) = handle.try_recv() {
-                match event {
-                    stt::SttEvent::Listening => {
-                        state.voice_assistant_text = Some("Listening...".to_string());
-                        state.dirty = true;
-                    }
-                    stt::SttEvent::Processing => {
-                        // Endpointing decided the user stopped talking.
-                        state.voice_active = false;
-                        state.voice_time = 0.;
-                        state.voice_assistant_text = Some("Processing...".to_string());
-                        state.dirty = true;
-                    }
-                    stt::SttEvent::Final(text) => {
-                        if text.trim().is_empty() {
-                            state.voice_assistant_text = None;
+        #[cfg(feature = "voice-assistant")]
+        {
+            // Voice Assistant: poll STT events and drive the assistant pipeline.
+            if let Some(handle) = &stt_handle {
+                while let Some(event) = handle.try_recv() {
+                    match event {
+                        stt::SttEvent::Listening => {
+                            state.voice_assistant_text = Some("Listening...".to_string());
                             state.dirty = true;
-                        } else {
-                            // Build app list from inventory for command matching and the cloud model.
-                            let app_list: Vec<(String, String)> = state
-                                .inventory
-                                .apps
-                                .iter()
-                                .map(|a| (a.title.clone(), a.id.clone()))
-                                .collect();
-
-                            // Local TV commands run first. Only transcripts that do
-                            // not resolve to an app or a search reach the cloud.
-                            let local = stt::resolve(&text, &app_list);
-                            state.voice_assistant_text = Some(match &local {
-                                Some(cloud_agent::VoiceAction::Launch(_)) => {
-                                    "Opening...".to_string()
-                                }
-                                Some(cloud_agent::VoiceAction::Search(query)) => {
-                                    format!("Searching for {query}...")
-                                }
-                                _ => "Thinking...".to_string(),
-                            });
+                        }
+                        stt::SttEvent::Processing => {
+                            // Endpointing decided the user stopped talking.
+                            state.voice_active = false;
+                            state.voice_time = 0.;
+                            state.voice_assistant_text = Some("Processing...".to_string());
                             state.dirty = true;
+                        }
+                        stt::SttEvent::Final(text) => {
+                            if text.trim().is_empty() {
+                                state.voice_assistant_text = None;
+                                state.dirty = true;
+                            } else {
+                                // Build app list from inventory for command matching and the cloud model.
+                                let app_list: Vec<(String, String)> = state
+                                    .inventory
+                                    .apps
+                                    .iter()
+                                    .map(|a| (a.title.clone(), a.id.clone()))
+                                    .collect();
 
-                            let conversation = state.voice_conversation.clone();
-                            let transcript = text;
-                            let tts_cmd_tx = tts_cmd_tx.clone();
-                            let ui_tx_clone = ui_tx.clone();
-                            tokio::spawn(async move {
-                                let action = match local {
-                                    Some(action) => action,
-                                    None => match cloud_agent::query_model(
-                                        transcript,
-                                        app_list.clone(),
-                                        &conversation,
-                                    )
-                                    .await
-                                    {
-                                        Ok(action) => action,
-                                        Err(e) => {
-                                            eprintln!("Voice Assistant error: {}", e);
-                                            let _ = ui_tx_clone
-                                                .send(VoiceUiCmd::SetText("Error".to_string()));
-                                            return;
-                                        }
-                                    },
-                                };
-                                match action {
-                                    cloud_agent::VoiceAction::Speak(text) => {
-                                        conversation.add_assistant(text.clone()).await;
-                                        let _ = tts_cmd_tx.send(tts::TtsCommand::Speak(text));
+                                // Local TV commands run first. Only transcripts that do
+                                // not resolve to an app or a search reach the cloud.
+                                let local = stt::resolve(&text, &app_list);
+                                state.voice_assistant_text = Some(match &local {
+                                    Some(cloud_agent::VoiceAction::Launch(_)) => {
+                                        "Opening...".to_string()
                                     }
-                                    cloud_agent::VoiceAction::Launch(app_id) => {
-                                        let app_name = app_list
-                                            .iter()
-                                            .find(|(_, id)| id == &app_id)
-                                            .map(|(name, _)| name.clone())
-                                            .unwrap_or_else(|| app_id.clone());
-                                        let _ = ui_tx_clone.send(VoiceUiCmd::SetText(format!(
-                                            "Opening {}...",
-                                            app_name
-                                        )));
-                                        let _ = std::process::Command::new("luna-send")
-                                            .args([
-                                                "-n", "1",
-                                                "luna://com.webos.applicationManager/launch",
-                                                &format!("{{\"id\":\"{}\",\"params\":{{}},\"subscribe\":true}}", app_id),
-                                            ])
-                                            .status();
+                                    Some(cloud_agent::VoiceAction::Search(query)) => {
+                                        format!("Searching for {query}...")
                                     }
-                                    cloud_agent::VoiceAction::Search(query) => {
-                                        let _ = ui_tx_clone.send(VoiceUiCmd::SetText(format!(
-                                            "Searching for {}...",
-                                            query
-                                        )));
-                                        if let Ok(snippets) = cloud_agent::web_search(&query).await
-                                            && let Ok(cloud_agent::VoiceAction::Speak(text)) =
-                                                cloud_agent::summarize_search(
-                                                    &query,
-                                                    snippets,
-                                                    &conversation,
-                                                )
-                                                .await
+                                    _ => "Thinking...".to_string(),
+                                });
+                                state.dirty = true;
+
+                                let conversation = state.voice_conversation.clone();
+                                let transcript = text;
+                                let tts_cmd_tx = tts_cmd_tx.clone();
+                                let ui_tx_clone = ui_tx.clone();
+                                tokio::spawn(async move {
+                                    let action = match local {
+                                        Some(action) => action,
+                                        None => match cloud_agent::query_model(
+                                            transcript,
+                                            app_list.clone(),
+                                            &conversation,
+                                        )
+                                        .await
                                         {
+                                            Ok(action) => action,
+                                            Err(e) => {
+                                                eprintln!("Voice Assistant error: {}", e);
+                                                let _ = ui_tx_clone
+                                                    .send(VoiceUiCmd::SetText("Error".to_string()));
+                                                return;
+                                            }
+                                        },
+                                    };
+                                    match action {
+                                        cloud_agent::VoiceAction::Speak(text) => {
+                                            conversation.add_assistant(text.clone()).await;
                                             let _ = tts_cmd_tx.send(tts::TtsCommand::Speak(text));
                                         }
+                                        cloud_agent::VoiceAction::Launch(app_id) => {
+                                            let app_name = app_list
+                                                .iter()
+                                                .find(|(_, id)| id == &app_id)
+                                                .map(|(name, _)| name.clone())
+                                                .unwrap_or_else(|| app_id.clone());
+                                            let _ = ui_tx_clone.send(VoiceUiCmd::SetText(format!(
+                                                "Opening {}...",
+                                                app_name
+                                            )));
+                                            // Route the launch through the platform on the SDL
+                                            // thread: a `luna-send` child process from a tokio
+                                            // worker keeps the launch out of the zoom path.
+                                            let _ = ui_tx_clone.send(VoiceUiCmd::Launch(app_id));
+                                        }
+                                        cloud_agent::VoiceAction::Search(query) => {
+                                            let _ = ui_tx_clone.send(VoiceUiCmd::SetText(format!(
+                                                "Searching for {}...",
+                                                query
+                                            )));
+                                            if let Ok(snippets) =
+                                                cloud_agent::web_search(&query).await
+                                                && let Ok(cloud_agent::VoiceAction::Speak(text)) =
+                                                    cloud_agent::summarize_search(
+                                                        &query,
+                                                        snippets,
+                                                        &conversation,
+                                                    )
+                                                    .await
+                                            {
+                                                let _ =
+                                                    tts_cmd_tx.send(tts::TtsCommand::Speak(text));
+                                            }
+                                        }
                                     }
-                                }
-                            });
+                                });
+                            }
+                        }
+                        stt::SttEvent::Error(e) => {
+                            eprintln!("STT error: {}", e);
+                            state.voice_active = false;
+                            state.voice_assistant_text = None;
+                            state.dirty = true;
                         }
                     }
-                    stt::SttEvent::Error(e) => {
-                        eprintln!("STT error: {}", e);
-                        state.voice_active = false;
-                        state.voice_assistant_text = None;
+                }
+            }
+
+            // Voice Assistant: poll UI commands from async tasks and apply them.
+            while let Ok(cmd) = ui_rx.try_recv() {
+                match cmd {
+                    VoiceUiCmd::SetText(text) => {
+                        state.voice_assistant_text = Some(text);
                         state.dirty = true;
                     }
-                }
-            }
-        }
-
-        // Voice Assistant: poll UI commands from async tasks and apply them.
-        while let Ok(cmd) = ui_rx.try_recv() {
-            match cmd {
-                VoiceUiCmd::SetText(text) => {
-                    state.voice_assistant_text = Some(text);
-                    state.dirty = true;
-                }
-            }
-        }
-
-        // Voice Assistant: poll TTS commands from async tasks and execute them.
-        if let Some(handle) = &tts_handle {
-            while let Ok(cmd) = tts_cmd_rx.try_recv() {
-                match cmd {
-                    tts::TtsCommand::Speak(text) => {
-                        handle.speak(text);
+                    VoiceUiCmd::Launch(app_id) => {
+                        launch_app(&mut state, &platform, &app_id);
                     }
-                    tts::TtsCommand::Stop => {
-                        handle.stop();
+                }
+            }
+
+            // Voice Assistant: poll TTS commands from async tasks and execute them.
+            if let Some(handle) = &tts_handle {
+                while let Ok(cmd) = tts_cmd_rx.try_recv() {
+                    match cmd {
+                        tts::TtsCommand::Speak(text) => {
+                            handle.speak(text);
+                        }
+                        tts::TtsCommand::Stop => {
+                            handle.stop();
+                        }
                     }
                 }
             }
@@ -1597,11 +1606,13 @@ fn run() -> Result<(), String> {
                         if state.voice_active {
                             state.voice_time = 0.;
                             state.voice_assistant_text = Some("Listening...".to_string());
+                            #[cfg(feature = "voice-assistant")]
                             if let Some(handle) = &stt_handle {
                                 handle.start();
                             }
                         } else {
                             state.voice_assistant_text = None;
+                            #[cfg(feature = "voice-assistant")]
                             if let Some(handle) = &stt_handle {
                                 handle.stop();
                             }

@@ -256,7 +256,16 @@ impl Scene {
     }
     /// The same as `image`, shifted by the wallpaper's parallax offset.
     fn image_parallax(&mut self, path: String, rect: Rect, parallax: [f32; 2]) {
-        let shifted = Rect::new(rect.x + parallax[0], rect.y + parallax[1], rect.w, rect.h);
+        // `parallax` is a fraction of the screen (up to ±2.4%), not pixels: scale it
+        // into the overscan the wallpaper has beyond the screen, so the pan drifts
+        // inside the margin Ken Burns itself creates and the rect always still covers
+        // the screen. The full-screen wallpaper fold relies on that, and a rect that
+        // stops covering the screen also exposes an unpainted edge strip.
+        let margin_x = ((rect.w - 1920.).max(0.)) * 0.5;
+        let margin_y = ((rect.h - 1080.).max(0.)) * 0.5;
+        let dx = (parallax[0] * 1920.).clamp(-margin_x, margin_x);
+        let dy = (parallax[1] * 1080.).clamp(-margin_y, margin_y);
+        let shifted = Rect::new(rect.x + dx, rect.y + dy, rect.w, rect.h);
         self.image(path, shifted, 0., false)
     }
 

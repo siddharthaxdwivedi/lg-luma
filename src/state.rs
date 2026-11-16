@@ -357,9 +357,8 @@ pub struct State {
     /// Voice Assistant: current UI status text (e.g., "Searching...", "Opening YouTube...")
     pub voice_assistant_text: Option<String>,
     /// Voice Assistant: conversation history for the cloud model.
+    #[cfg(feature = "voice-assistant")]
     pub voice_conversation: crate::cloud_agent::ConversationState,
-    /// Voice Assistant: smoothed TTS RMS level (0..1) for dual-reactivity orb pulse.
-    pub tts_rms: f32,
     /// Voice Assistant: shared atomic TTS RMS for background TTS thread to write to.
     pub tts_rms_atomic: std::sync::Arc<std::sync::atomic::AtomicI32>,
     /// Voice Assistant: shared atomic STT mic RMS for the capture thread to write to.
@@ -431,8 +430,8 @@ impl State {
             #[cfg(feature = "webos")]
             splash_done: false,
             voice_assistant_text: None,
+            #[cfg(feature = "voice-assistant")]
             voice_conversation: crate::cloud_agent::ConversationState::new(),
-            tts_rms: 0.0,
             tts_rms_atomic: std::sync::Arc::new(std::sync::atomic::AtomicI32::new(0)),
             stt_rms_atomic: std::sync::Arc::new(std::sync::atomic::AtomicI32::new(0)),
         }
@@ -747,7 +746,6 @@ impl State {
             self.dirty |= self.voice_fade == 0. && self.voice_time > 0.;
             self.voice_level = 0.;
             self.voice_time = 0.;
-            self.tts_rms = 0.0;
             self.tts_rms_atomic
                 .store(0, std::sync::atomic::Ordering::Relaxed);
         }
