@@ -2670,27 +2670,6 @@ fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
                     chevron: false,
                 },
             );
-            // The cinematic toggle sits at the content edge on its own, apart from the three
-            // right-aligned rows above it.
-            row(
-                out,
-                state,
-                assets,
-                Row {
-                    target: Target::WallpaperCinematic,
-                    rect: Rect::new(640., 164.8 + 84., 520., 64.),
-                    title: cinematic_label,
-                    icon: Some("sparkles"),
-                    value: Some(language.t(if state.preferences.cinematic_wallpaper {
-                        "stateOn"
-                    } else {
-                        "stateOff"
-                    })),
-                    description: None,
-                    selected: false,
-                    chevron: false,
-                },
-            );
             row(
                 out,
                 state,
@@ -2706,6 +2685,27 @@ fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
                     title: upload_label,
                     icon: Some("upload"),
                     value: None,
+                    description: None,
+                    selected: false,
+                    chevron: false,
+                },
+            );
+            // Appended after the upload row so it stays last in the control order: the
+            // fixed actions and the existing focus order above are unchanged.
+            row(
+                out,
+                state,
+                assets,
+                Row {
+                    target: Target::WallpaperCinematic,
+                    rect: Rect::new(640., 164.8 + 84., 520., 64.),
+                    title: cinematic_label,
+                    icon: Some("sparkles"),
+                    value: Some(language.t(if state.preferences.cinematic_wallpaper {
+                        "stateOn"
+                    } else {
+                        "stateOff"
+                    })),
                     description: None,
                     selected: false,
                     chevron: false,
