@@ -74,7 +74,7 @@ pub enum Draw {
     /// seconds. Drawn last with premultiplied-over blending, over every other command.
     Orb(Rect, f32, f32, f32),
     Text(String, Rect, TextStyle, Color, bool),
-    Image(String, Rect, f32, bool, [f32; 2]),
+    Image(String, Rect, f32, bool),
     TintedImage(String, Rect, f32, bool, Color),
     /// Installed icon and its backdrop, composited before opacity and edge fading.
     /// The glass plate paints the icon alone over its own gradient (`AppIcon`), so this
@@ -379,7 +379,7 @@ fn full_screen_paint(command: &Draw) -> bool {
 /// An opaque, untinted, square full-screen image: the wallpaper that scrims can fold into.
 fn plain_wallpaper(command: &Draw) -> Option<(&str, Rect)> {
     match command {
-        Draw::Image(path, rect, radius, false, _) if full_screen(rect) && *radius <= 0. => {
+        Draw::Image(path, rect, radius, false) if full_screen(rect) && *radius <= 0. => {
             Some((path.as_str(), *rect))
         }
         Draw::TintedImage(path, rect, radius, false, tint)
@@ -1999,7 +1999,7 @@ impl Renderer {
                 Draw::Text(text, rect, size, color, centered) => {
                     self.text(text, *rect, *size, *color, *centered)
                 }
-                Draw::Image(path, rect, radius, contain, _parallax) => {
+                Draw::Image(path, rect, radius, contain) => {
                     self.image(path, *rect, *radius, *contain, [1.; 4])
                 }
                 Draw::TintedImage(path, rect, radius, contain, tint) => {

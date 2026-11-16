@@ -126,6 +126,10 @@ pub enum Target {
     TileTest(String),
     TileRemove(String),
     TileEditor,
+    ClearFilter,
+    ClearSearch,
+    AppNamesHome,
+    AppNamesApps,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -172,10 +176,6 @@ pub enum Overlay {
     BackgroundDelete { id: String, restore: Target },
     WidgetOptions { cell: usize },
     WidgetCatalog { cell: usize, restore: Target },
-    ClearFilter,
-    ClearSearch,
-    AppNamesHome,
-    AppNamesApps,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -1613,6 +1613,7 @@ impl State {
             Some(Subpage::Language) => Target::Setting(4),
             Some(Subpage::TextRendering) => Target::Setting(7),
             Some(Subpage::AppSorting) => Target::Setting(10),
+            Some(Subpage::AppNames) => Target::Setting(0),
             None => Target::Sidebar(self.section),
         };
         self.jump_scroll(0.);
