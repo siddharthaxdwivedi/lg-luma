@@ -824,12 +824,9 @@ pub fn dispatch(
                     home.apply(&config, false)?;
                 }
             } else if command != "boot" {
-                config.enabled = false;
-                system::write_json(system, CONFIG, &config)?;
-                home.restore(&config)?;
-                if hook_owned(system) {
-                    system::remove(system, HOOK)?;
-                }
+                // `disable` removes the early-start unit and the hook as well as restoring
+                // LG Home, which the inline restore path skipped.
+                home.disable(&mut config)?;
             }
             Ok(json!({"returnValue":true}))
         }
