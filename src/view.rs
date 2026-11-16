@@ -296,6 +296,22 @@ impl Scene {
         self.border(rect.inset(-6.9), radius + 6.9, 3.7, c(0xffffff, 0.10));
         self.border(rect.inset(-3.2), radius + 3.2, 3.2, c(0xf0f0f0, 1.));
     }
+    /// Focus bloom behind a card: light bleeds out from behind the glass, and the tile is
+    /// painted over it, leaving only the halo outside its edges. One continuous exponential
+    /// falloff instead of stacked flat-alpha rings. The focused card is drawn last by the
+    /// page, so no neighbour paints over it.
+    fn glow(&mut self, rect: Rect, radius: f32, intensity: f32) {
+        // Keep the falloff inside the card on small surfaces: half_size - blur must stay
+        // positive in the shader's rounded-rect distance field.
+        let blur = 60.0f32.min(rect.w * 0.45).min(rect.h * 0.45);
+        self.draw.push(Draw::Glow(
+            rect,
+            radius,
+            blur,
+            c(0xe8eef8, 0.42 * intensity),
+        ));
+    }
+
     fn shadow(&mut self, rect: Rect, radius: f32, blur: f32, y: f32, alpha: f32) {
         self.draw.push(Draw::Shadow(
             Rect::new(rect.x, rect.y + y, rect.w, rect.h),
@@ -1022,6 +1038,9 @@ fn tile(out: &mut Scene, state: &State, assets: &Assets, app: &App, rect: Rect, 
         if focused { 14. } else { 9. },
         if focused { 0.4 } else { 0.165 },
     );
+    if focused {
+        out.glow(rect, 19.2, 1.);
+    }
     let favorite_color = app_face(out, assets, app, rect, state.preferences.language, 19.2);
     if !dock
         && state

@@ -697,26 +697,20 @@ fn visible_cards_switch_from_fallback_to_an_inset_icon_on_a_glass_plate() {
     // shows around the inset icon and a white badge stays legible on top of it. The tint, both
     // rims and the top reflection are all part of that single draw.
     let glass_on_face = |draw: &crate::renderer::Draw| match draw {
-        crate::renderer::Draw::Glass(rect, radius, glass) => {
-            let dark = |stop: &[f32; 4]| (stop[0] + stop[1] + stop[2]) / 3. < 0.3;
+        crate::renderer::Draw::Glass(rect, radius, tint) => {
+            let dark = (tint[0] + tint[1] + tint[2]) / 3. < 0.3;
             let covers = rect.w < 400.
                 && rect.x < face.x
                 && rect.y < face.y
                 && rect.x + rect.w > face.x + face.w
                 && rect.y + rect.h > face.y + face.h;
-            (covers && dark(&glass.top) && dark(&glass.bottom)).then_some((*rect, *radius, *glass))
+            (covers && dark).then_some((*rect, *radius, *tint))
         }
         _ => None,
     };
     let plate = loaded.draw.iter().find_map(glass_on_face).unwrap();
     assert!(plate.1 > 0., "the plate is a rounded face");
-    for stop in [plate.2.top, plate.2.bottom] {
-        assert!(stop[3] < 1., "{stop:?} is opaque, not smoked glass");
-    }
-    assert!(
-        plate.2.rim > 0. && plate.2.inner > 0.,
-        "the plate carries its rims"
-    );
+    assert!(plate.2[3] < 1., "{:?} is opaque, not smoked glass", plate.2);
     // The icon sits centred inside that plate.
     let (centre_x, centre_y) = face.center();
     let (plate_x, plate_y) = plate.0.center();

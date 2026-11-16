@@ -114,7 +114,7 @@ pub fn render(out: &mut Scene, state: &State, assets: &Assets) {
                 .find(|app| app.id == entry.app.id)
                 .unwrap_or(&entry.app);
             out.shadow(rect, radius, 48., 22., 0.28 + 0.27 * prominence);
-            app_face(out, assets, app, rect, language, radius, 0.);
+            app_face(out, assets, app, rect, language, radius);
             if focused {
                 out.ring(rect, radius, 1.);
             } else {

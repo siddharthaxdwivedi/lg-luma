@@ -114,9 +114,6 @@ fn same(a: &Draw, b: &Draw) -> bool {
         (Draw::RoundedGradient(r1, a1, t1, b1), Draw::RoundedGradient(r2, a2, t2, b2)) => {
             rect(r1, r2) && a1 == a2 && t1 == t2 && b1 == b2
         }
-        (Draw::Glass(r1, a1, g1), Draw::Glass(r2, a2, g2)) => {
-            rect(r1, r2) && a1 == a2 && *g1 == *g2
-        }
         (Draw::Shadow(r1, a1, b1, c1), Draw::Shadow(r2, a2, b2, c2)) => {
             rect(r1, r2) && a1 == a2 && b1 == b2 && c1 == c2
         }

@@ -172,6 +172,10 @@ pub enum Overlay {
     BackgroundDelete { id: String, restore: Target },
     WidgetOptions { cell: usize },
     WidgetCatalog { cell: usize, restore: Target },
+    ClearFilter,
+    ClearSearch,
+    AppNamesHome,
+    AppNamesApps,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
@@ -192,6 +196,7 @@ pub enum Subpage {
     Language,
     AppSorting,
     TextRendering,
+    AppNames,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Serialize)]
