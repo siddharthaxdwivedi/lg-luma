@@ -2690,15 +2690,21 @@ fn settings_content(out: &mut Scene, state: &State, assets: &Assets) {
                     chevron: false,
                 },
             );
-            // Appended after the upload row so it stays last in the control order: the
-            // fixed actions and the existing focus order above are unchanged.
+            // On the top action band with the other fixed rows, left of Upload: a row of
+            // its own would add a focus band between the actions and the gallery.
             row(
                 out,
                 state,
                 assets,
                 Row {
                     target: Target::WallpaperCinematic,
-                    rect: Rect::new(640., 164.8 + 84., 520., 64.),
+                    rect: Rect::new(
+                        640.,
+                        164.8,
+                        (1760. - cycle_width - 40. - gradient_width - upload_width - 640. - 20.)
+                            .clamp(0., 400.),
+                        64.,
+                    ),
                     title: cinematic_label,
                     icon: Some("sparkles"),
                     value: Some(language.t(if state.preferences.cinematic_wallpaper {
