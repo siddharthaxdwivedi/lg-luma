@@ -347,7 +347,9 @@ impl Scene {
                 | Draw::Shadow(_, _, _, color)
                 | Draw::Text(_, _, _, color, _)
                 | Draw::TintedImage(_, _, _, _, color)
-                | Draw::AppImage(_, _, _, color) => apply(color),
+                | Draw::AppImage(_, _, _, color)
+                | Draw::Glow(_, _, _, color)
+                | Draw::AppIcon(_, _, color) => apply(color),
                 Draw::RoundedGradient(_, _, a, b) => {
                     apply(a);
                     apply(b);

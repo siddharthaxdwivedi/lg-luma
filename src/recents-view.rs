@@ -116,7 +116,7 @@ pub fn render(out: &mut Scene, state: &State, assets: &Assets) {
             out.shadow(rect, radius, 48., 22., 0.28 + 0.27 * prominence);
             app_face(out, assets, app, rect, language, radius);
             if focused {
-                out.ring(rect, radius, 1.);
+                out.ring(rect, radius);
             } else {
                 out.border(rect, radius, 1., c(0xffffff, 0.16));
             }

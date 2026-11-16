@@ -3287,7 +3287,8 @@ impl State {
                         | Subpage::Greeting
                         | Subpage::Clock
                         | Subpage::Weather
-                        | Subpage::Shortcuts,
+                        | Subpage::Shortcuts
+                        | Subpage::AppNames,
                     ) => {
                         return vec![];
                     }
