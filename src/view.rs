@@ -24,20 +24,11 @@ const FACE_HEIGHT: f32 = 154.4;
 const GRID_PITCH: f32 = 296.4;
 const RECENTS_BACKDROP_OPACITY: f32 = 0.86;
 
-/// Corner radius as a fraction of the shorter side. Larger than iOS's 0.223 so the
-/// shader's rounded-rectangle field reads as a smooth squircle at TV distance.
-const SQUIRCLE_RADIUS: f32 = 0.30;
 /// Ken Burns: the wallpaper reaches 5% zoom after 30 s, then eases back out. Public because the
 /// renderer caps the wallpaper's texture at the size it is really displayed at, and that size
 /// includes this zoom.
 pub const KEN_BURNS_ZOOM: f32 = 0.05;
 const KEN_BURNS_PERIOD: f64 = 60.;
-
-/// Icon plates and tile backgrounds share one radius: a fraction of the shorter side large
-/// enough to read as a squircle rather than a plain rounded rectangle.
-fn squircle(rect: Rect) -> f32 {
-    rect.w.min(rect.h) * SQUIRCLE_RADIUS
-}
 
 /// The wallpaper's logical rect. Full-screen normally; while idle it eases out to a 5% zoom
 /// after 30 seconds, then back, drifting slightly inside the extra crop so the motion is a

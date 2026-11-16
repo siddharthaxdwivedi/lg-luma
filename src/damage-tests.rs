@@ -30,7 +30,6 @@ fn wallpaper() -> Draw {
         Rect::new(0., 0., 1920., 1080.),
         0.,
         false,
-        [0., 0.],
     )
 }
 fn ring(x: f32) -> Draw {

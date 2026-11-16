@@ -85,11 +85,9 @@ pub fn bounds(command: &Draw) -> Option<Rect> {
         Draw::Glass(rect, ..)
         | Draw::Shape(rect, ..)
         | Draw::RoundedGradient(rect, ..)
-        | Draw::Glass(rect, ..)
         | Draw::Image(_, rect, ..)
         | Draw::TintedImage(_, rect, ..)
-        | Draw::AppImage(_, rect, ..)
-        | Draw::AppIcon(_, rect, _) => Some(rect.inset(-1.)),
+        | Draw::AppImage(_, rect, ..) => Some(rect.inset(-1.)),
         Draw::Shadow(rect, _, blur, _) => Some(rect.inset(-blur - 1.)),
         Draw::Glow(rect, _, blur, _) => Some(rect.inset(-blur - 1.)),
         Draw::Orb(rect, ..) => Some(rect.inset(-1.)),

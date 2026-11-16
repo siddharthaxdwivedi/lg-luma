@@ -126,9 +126,15 @@ pub enum Target {
     TileTest(String),
     TileRemove(String),
     TileEditor,
+    // The clear-filter and clear-search rows and the app-names subpage are not ported onto
+    // upstream's settings lists yet, so these targets have no renderer and no way to be
+    // focused; their state arms are kept until they do.
+    #[allow(dead_code)]
     ClearFilter,
+    #[allow(dead_code)]
     ClearSearch,
     AppNamesHome,
+    #[allow(dead_code)]
     AppNamesApps,
 }
 

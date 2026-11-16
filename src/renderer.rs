@@ -82,7 +82,10 @@ pub enum Draw {
     /// upstream look can be restored without rebuilding the artwork decode.
     #[allow(dead_code)]
     AppImage(Arc<crate::app_artwork::Artwork>, Rect, f32, Color),
-    /// Installed icon alone, alpha preserved, drawn over a caller-painted plate.
+    /// Installed icon alone, alpha preserved, drawn over a caller-painted plate. Kept, with its
+    /// renderer support and damage handling, until the fork's tile plate is ported back onto
+    /// upstream's artwork path.
+    #[allow(dead_code)]
     AppIcon(Arc<crate::app_artwork::Artwork>, Rect, Color),
     Clip(Option<Rect>),
     EdgeFade(Option<[f32; 4]>),

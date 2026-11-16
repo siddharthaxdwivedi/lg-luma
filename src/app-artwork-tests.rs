@@ -603,7 +603,7 @@ fn both_grids_and_the_options_card_use_one_white_heart_with_a_dark_offset() {
             render(&state)
                 .draw
                 .iter()
-                .any(|draw| matches!(draw, Draw::AppIcon(..)))
+                .any(|draw| matches!(draw, Draw::AppImage(..)))
         });
         for popup in [false, true] {
             if popup {
@@ -666,7 +666,7 @@ fn visible_cards_switch_from_fallback_to_an_inset_icon_on_a_glass_plate() {
         scene
             .draw
             .iter()
-            .filter(|draw| matches!(draw, crate::renderer::Draw::AppIcon(..)))
+            .filter(|draw| matches!(draw, crate::renderer::Draw::AppImage(..)))
             .count()
     };
     assert_eq!(
@@ -677,18 +677,19 @@ fn visible_cards_switch_from_fallback_to_an_inset_icon_on_a_glass_plate() {
     poll_until(&assets.artwork, || icons(&scene()) > 0);
     let loaded = scene();
     assert_eq!(icons(&loaded), 1, "one installed icon per visible card");
+    // Upstream's artwork path composites the installed icon and its backdrop in one draw.
     assert!(
-        !loaded
+        loaded
             .draw
             .iter()
             .any(|draw| matches!(draw, crate::renderer::Draw::AppImage(..))),
-        "nothing composites the backdrop into the icon any more"
+        "the icon is composited with its backdrop"
     );
     let (face, tint) = loaded
         .draw
         .iter()
         .find_map(|draw| match draw {
-            crate::renderer::Draw::AppIcon(_, rect, tint) => Some((*rect, *tint)),
+            crate::renderer::Draw::AppImage(_, rect, _, tint) => Some((*rect, *tint)),
             _ => None,
         })
         .unwrap();
