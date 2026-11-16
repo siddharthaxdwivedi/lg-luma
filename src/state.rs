@@ -2022,13 +2022,7 @@ impl State {
                     .unwrap_or(0);
                 match direction {
                     Direction::Right => {
-                        let entry = if self.section == 1 {
-                            // The cinematic toggle is the leftmost pill, so it is the first
-                            // control a Right from the sidebar reaches.
-                            Target::WallpaperCinematic
-                        } else {
-                            self.section_entry()
-                        };
+                        let entry = self.section_entry();
                         self.focus(entry, controls);
                     }
                     Direction::Up => self.focus(

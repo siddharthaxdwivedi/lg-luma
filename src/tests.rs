@@ -1260,6 +1260,10 @@ fn background_sidebar_right_focuses_upload_and_ok_restores_the_applied_backgroun
     state.focus = Target::Sidebar(1);
     state.section = 1;
     state.direction(Direction::Right, &controls(&state));
+    // The sidebar enters on the applied background's card, and Up from a card reaches
+    // the upload row.
+    assert!(matches!(state.focus, Target::Background(_)));
+    state.direction(Direction::Up, &controls(&state));
     assert_eq!(state.focus, Target::UploadWallpaper);
     assert_eq!(state.preferences.background, "forest");
     assert!(!state.preferences.wallpaper_cycle);
